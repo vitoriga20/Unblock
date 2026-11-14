@@ -51,6 +51,20 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
 
     private var segmenter: Segmenter? = null
 
+    /** 由界面置位，在阶段交界处生效；单步内部不打断。 */
+    @Volatile
+    private var cancelRequested = false
+
+    fun cancel() {
+        cancelRequested = true
+    }
+
+    /** 释放 ONNX 会话；进程退出或需要重建管线时调用。 */
+    fun close() {
+        segmenter?.close()
+        segmenter = null
+    }
+
     private fun segmenter(): Segmenter? {
         if (!cfg.usePersonMask) return null
         if (segmenter == null) {
@@ -127,6 +141,7 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
                 c
             }
             Imgcodecs.imwrite(java.io.File(dir, name).absolutePath, src)
+            if (src !== m) src.release()
         } catch (t: Throwable) {
             Log.w("Unblock", "dump $name 失败: ${t.message}")
         }
@@ -166,8 +181,10 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
     ): PipelineResult {
         val steps = ArrayList<Pair<String, Long>>()
         val tStart = System.currentTimeMillis()
+        cancelRequested = false
 
         fun mark(name: String) {
+            if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
             val elapsed = System.currentTimeMillis() - tStart
             steps.add(name to elapsed)
             Log.d("Unblock", "[$id] $name @ ${elapsed}ms")
@@ -265,6 +282,7 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
         var residual: ResidualInfo? = null
         if (cfg.align.residualRefine) {
             val refined = Geometry.refineResidual(current, auxWarped, auxValid, cfg.align)
+            if (refined.first !== auxWarped) auxWarped.release()
             auxWarped = refined.first
             auxValid = refined.second
             residual = refined.third
@@ -277,6 +295,7 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
             Imgproc.warpPerspective(it, warped, h, baseSize, Imgproc.INTER_NEAREST)
             warped
         }
+        personAux?.release()
         mark("segment")
 
         val occl = Occlusion.detect(current, auxWarped, auxValid, screenMask, personCurrent, personAuxWarped, cfg.occlusion)
@@ -291,10 +310,13 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
             // 接缝外侧一圈可能还带着人物残留/半影，参与增益估计会把整张图拉偏
             val ring = MatTools.dilate(occl.first, cfg.compose.gainExcludePx * 2 + 1)
             region.setTo(Scalar(0.0), ring)
+            ring.release()
         }
 
         val gainMap = Compose.estimateGainMap(current, auxWarped, region, cfg.compose)
         val auxGained = Compose.applyGain(auxWarped, gainMap)
+        val gainMeanValue = Core.mean(gainMap).`val`[0]
+        gainMap.release()
         mark("gain")
         // 增益只补偿乘性亮度差；色度差用洞口环带的一阶统计再对齐一次（与 PC 端同口径）
         val colorApplied = cfg.compose.colorMatchEnable && Core.countNonZero(occl.first) > 0
@@ -304,8 +326,14 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
         val composed = Compose.blend(current, auxCorrected, occl.first, auxValid, cfg.compose)
         mark("blend")
 
+        region.release()
+        notMask.release()
+        auxWarped.release()
+        if (auxGained !== auxCorrected) auxGained.release()
+        auxCorrected.release()
+
         return BlendOut(composed, occl.first, occl.second, auxValid, personAuxWarped,
-            Core.mean(gainMap).`val`[0], residual, colorApplied)
+            gainMeanValue, residual, colorApplied)
     }
 
     /**
@@ -322,8 +350,10 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
         require(auxes.isNotEmpty()) { "至少需要一张补图" }
         val steps = ArrayList<Pair<String, Long>>()
         val tStart = System.currentTimeMillis()
+        cancelRequested = false
 
         fun mark(name: String) {
+            if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
             val elapsed = System.currentTimeMillis() - tStart
             steps.add(name to elapsed)
             Log.d("Unblock", "[$id] $name @ ${elapsed}ms")
@@ -346,6 +376,10 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
             val h = hList?.getOrNull(i)
                 ?: Geometry.homographyFromFeatures(current, aux, baseQuad,
                     Geometry.insetQuad(aux.cols(), aux.rows()), cfg.align)
+            val previousCurrent = current
+            val previousMask = mask
+            val previousPerson = personCurrent
+            val previousAuxValid = lastAuxValid
             val out = blendWith(current, aux, h, baseSize, screenMask, personCurrent, seg) { mark(it) }
             current = out.composed
             mask = out.mask
@@ -354,7 +388,11 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
             lastAuxValid = out.auxValid
             lastResidual = out.residual
             lastColorApplied = out.colorApplied
+            if (previousCurrent !== base && previousCurrent !== current) previousCurrent.release()
+            if (previousMask !== mask) previousMask.release()
+            if (previousAuxValid != null && previousAuxValid !== lastAuxValid) previousAuxValid.release()
             personCurrent = seg?.let { it.personMask(current) }
+            if (previousPerson != null && previousPerson !== personCurrent) previousPerson.release()
         }
 
         val seam = Compose.seamRatio(current, mask)

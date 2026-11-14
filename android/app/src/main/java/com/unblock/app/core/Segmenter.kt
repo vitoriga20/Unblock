@@ -166,6 +166,11 @@ class Segmenter(
 
     private fun sigmoid(x: Float): Float = 1.0f / (1.0f + Math.exp(-x.toDouble()).toFloat())
 
+    /** 释放 ONNX 会话。 */
+    fun close() {
+        session.close()
+    }
+
     private fun iou(a: FloatArray, b: FloatArray): Float {
         val ix0 = max(a[0], b[0])
         val iy0 = max(a[1], b[1])

@@ -1,176 +1,383 @@
 package com.unblock.app
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
-import android.widget.Button
+import android.util.Log
+import android.view.View
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.unblock.app.core.ConfigLoader
 import com.unblock.app.core.Geometry
 import com.unblock.app.core.PhotoStore
 import com.unblock.app.core.Pipeline
-import com.unblock.app.core.PipelineResult
+import com.unblock.app.core.PipelineProvider
+import com.unblock.app.core.TaskItem
 import com.unblock.app.core.TaskStore
+import com.unblock.app.ui.GalleryAdapter
 import com.unblock.app.ui.QuadEditorActivity
-import com.unblock.app.ui.RecentActivity
+import com.unblock.app.ui.ResultActivity
 import org.opencv.android.OpenCVLoader
+import org.opencv.core.Mat
 import org.opencv.core.Point
 import java.io.File
-import java.util.Locale
+import java.util.concurrent.CancellationException
 
+/**
+ * 首页即画廊：第一格是导入入口，之后是历次合成结果。
+ * 选照片、拍照、四角确认、合成、入库都围绕同一轮「会话」推进，避免半路丢素材。
+ */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var runButton: Button
-    private lateinit var status: TextView
-    private lateinit var image0: ImageView
-    private lateinit var meta0: TextView
-    private lateinit var image1: ImageView
-    private lateinit var meta1: TextView
+    companion object {
+        private const val GRID_SPAN = 3
+        private const val MIN_PHOTOS = 2
+        private const val MAX_PHOTOS = 4
+        private const val PROVIDER_SUFFIX = ".fileprovider"
+        private const val PROGRESS_CEILING = 90
+        private const val PROGRESS_ANIM_MS = 5000L
+        private const val BUSY_THUMB_SIDE = 320
+        private const val TAG = "Unblock"
+    }
 
-    /** 选好照片后待合成的缓存文件，第 0 张作为底图。 */
-    private var pendingFiles: List<File> = emptyList()
-    /** 四角编辑结束后是否直接进入合成。 */
-    private var composeAfterEdit = false
+    private lateinit var adapter: GalleryAdapter
+    private lateinit var busyOverlay: View
+    private lateinit var busyThumb: ImageView
+    private lateinit var busyTitle: TextView
+    private lateinit var busyBar: ProgressBar
+    private lateinit var failOverlay: View
+    private lateinit var failMessage: TextView
+
+    private var progressAnimator: ValueAnimator? = null
+
+    /** 当前一轮会话：目录 + 已加入的照片。 */
+    private var sessionDir: File? = null
+    private val photos = ArrayList<File>()
+
+    private var editorTarget: File? = null
+    private var captureTarget: File? = null
+    private var lastQuad: FloatArray? = null
+
+    private var activePipeline: Pipeline? = null
+    @Volatile
+    private var abandoned = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        runButton = findViewById(R.id.runButton)
-        status = findViewById(R.id.status)
-        image0 = findViewById(R.id.image0)
-        meta0 = findViewById(R.id.meta0)
-        image1 = findViewById(R.id.image1)
-        meta1 = findViewById(R.id.meta1)
+        window.statusBarColor = getColor(R.color.paper)
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
 
-        val opencvReady = try {
+        busyOverlay = findViewById(R.id.busyOverlay)
+        busyThumb = findViewById(R.id.busyThumb)
+        busyTitle = findViewById(R.id.busyTitle)
+        busyBar = findViewById(R.id.busyBar)
+        failOverlay = findViewById(R.id.failOverlay)
+        failMessage = findViewById(R.id.failMessage)
+
+        val gallery = findViewById<RecyclerView>(R.id.gallery)
+        gallery.layoutManager = GridLayoutManager(this, GRID_SPAN)
+        gallery.setHasFixedSize(true)
+        adapter = GalleryAdapter(
+            onAdd = { showImportSheet() },
+            onOpen = { openResult(it) },
+            onDelete = { confirmDelete(it) }
+        )
+        gallery.adapter = adapter
+
+        findViewById<View>(R.id.busyCancel).setOnClickListener { cancelCompose() }
+        findViewById<View>(R.id.retryButton).setOnClickListener { retryCompose() }
+        findViewById<View>(R.id.swapButton).setOnClickListener {
+            failOverlay.visibility = View.GONE
+            discardSession()
+            showImportSheet()
+        }
+        // 开发回归入口：长按标题跑内置样张，正式界面不出现任何按钮
+        findViewById<View>(R.id.homeTitle).setOnLongClickListener {
+            confirmSamples()
+            true
+        }
+
+        try {
             OpenCVLoader.initLocal()
         } catch (t: Throwable) {
-            false
+            Log.w(TAG, "OpenCV 初始化失败: ${t.message}")
         }
 
-        status.text = if (opencvReady) "OpenCV 就绪" else "OpenCV 初始化失败，无法继续"
-
-        runButton.isEnabled = opencvReady
-        runButton.setOnClickListener { runSamples() }
-
-        findViewById<Button>(R.id.pickButton).setOnClickListener { pickPhotos() }
-        findViewById<Button>(R.id.sampleFlowButton).setOnClickListener { importSamples() }
-        findViewById<Button>(R.id.recentButton).setOnClickListener {
-            startActivity(Intent(this, RecentActivity::class.java))
-        }
-
-        findViewById<Button>(R.id.quadButton).setOnClickListener {
-            composeAfterEdit = false
-            val intent = Intent(this, QuadEditorActivity::class.java)
-                .putExtra(QuadEditorActivity.EXTRA_ASSET, "samples/0_0.jpg")
-            quadLauncher.launch(intent)
-        }
+        refreshTasks()
     }
 
-    private fun pickPhotos() {
-        picker.launch(androidx.activity.result.PickVisualMediaRequest(
-            ActivityResultContracts.PickVisualMedia.ImageOnly))
+    override fun onDestroy() {
+        super.onDestroy()
+        progressAnimator?.cancel()
     }
 
-    private val picker = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris ->
-        if (uris.isEmpty()) return@registerForActivityResult
-        status.text = "正在导入 ${uris.size} 张照片…"
+    // ---------- 首页数据 ----------
+
+    private fun refreshTasks() {
         Thread {
-            PhotoStore.clear(this)
-            val files = ArrayList<File>()
-            uris.take(4).forEachIndexed { i, uri ->
-                PhotoStore.importFromUri(this, uri, i)?.let { files.add(it) }
+            val list = TaskStore.list(this)
+            runOnUiThread { adapter.submit(list) }
+        }.start()
+    }
+
+    private fun openResult(item: TaskItem) {
+        startActivity(
+            Intent(this, ResultActivity::class.java)
+                .putExtra(ResultActivity.EXTRA_FILE, item.image.absolutePath)
+                .putExtra(ResultActivity.EXTRA_SOURCES, item.sources)
+                .putExtra(ResultActivity.EXTRA_TIME, item.time)
+        )
+    }
+
+    private fun confirmDelete(item: TaskItem) {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_delete_title)
+            .setMessage(R.string.dialog_delete_message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_delete) { _, _ ->
+                Thread {
+                    TaskStore.delete(this, item)
+                    runOnUiThread { refreshTasks() }
+                }.start()
+            }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setTextColor(getColor(R.color.destructive))
+        }
+        dialog.show()
+    }
+
+    // ---------- 导入 ----------
+
+    private fun showImportSheet() {
+        val options = arrayOf(
+            getString(R.string.action_take_photo),
+            getString(R.string.action_pick_album)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.title_import)
+            .setItems(options) { _, which ->
+                if (which == 0) startCamera() else startAlbum()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun startAlbum() {
+        picker.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
+    private val picker = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@registerForActivityResult
+        val dir = ensureSession() ?: return@registerForActivityResult
+        val room = MAX_PHOTOS - photos.size
+        showBusy(getString(R.string.busy_importing), indeterminate = true)
+        Thread {
+            val added = ArrayList<File>()
+            for (uri in uris.take(room)) {
+                val index = PhotoStore.nextIndex(dir)
+                PhotoStore.importFromUri(this, uri, dir, index)?.let { added.add(it) }
             }
             runOnUiThread {
-                if (files.size < 2) {
-                    status.text = "至少需要 2 张照片（成功导入 ${files.size} 张）"
+                hideBusy()
+                if (added.isEmpty()) {
+                    showFailure(getString(R.string.fail_import))
                     return@runOnUiThread
                 }
-                pendingFiles = files
-                status.text = "已导入 ${files.size} 张，先确认底图四角"
-                openEditor(files[0])
+                photos.addAll(added)
+                onPhotosReady()
             }
         }.start()
     }
 
-    /** 内置样张走完整真实流程，用于在没有相册素材时回归验证。 */
-    private fun importSamples() {
-        status.text = "正在导入内置样张…"
+    private fun startCamera() {
+        val dir = ensureSession() ?: return
+        val target = PhotoStore.captureTarget(dir, PhotoStore.nextIndex(dir))
+        try {
+            val uri = FileProvider.getUriForFile(this, packageName + PROVIDER_SUFFIX, target)
+            captureTarget = target
+            camera.launch(uri)
+        } catch (t: Throwable) {
+            Log.w(TAG, "相机启动失败: ${t.message}")
+            showFailure(getString(R.string.fail_import))
+        }
+    }
+
+    private val camera = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val target = captureTarget
+        captureTarget = null
+        if (!ok || target == null || !target.exists() || target.length() == 0L) {
+            target?.delete()
+            return@registerForActivityResult
+        }
+        showBusy(getString(R.string.busy_importing), indeterminate = true)
         Thread {
-            PhotoStore.clear(this)
-            val a = PhotoStore.importFromAsset(this, "samples/0_0.jpg", 0)
-            val b = PhotoStore.importFromAsset(this, "samples/0_1.jpg", 1)
-            // 第三张用同一份补图的副本，用来验证多图循环本身不会退化
-            val c = PhotoStore.importFromAsset(this, "samples/0_1.jpg", 2)
+            val normalized = PhotoStore.normalizeCaptured(target) ?: target
             runOnUiThread {
-                if (a == null || b == null) {
-                    status.text = "样张导入失败"
-                    return@runOnUiThread
-                }
-                pendingFiles = listOfNotNull(a, b, c)
-                openEditor(a)
+                hideBusy()
+                photos.add(normalized)
+                onPhotosReady()
             }
         }.start()
     }
+
+    private fun onPhotosReady() {
+        if (photos.size >= MIN_PHOTOS) {
+            openEditor(photos[0])
+        } else {
+            promptAddMore()
+        }
+    }
+
+    private fun promptAddMore() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_need_more_title)
+            .setMessage(R.string.dialog_need_more_message)
+            .setPositiveButton(R.string.action_take_photo) { _, _ -> startCamera() }
+            .setNegativeButton(R.string.action_pick_album) { _, _ -> startAlbum() }
+            .setNeutralButton(R.string.action_cancel) { _, _ -> discardSession() }
+            .show()
+    }
+
+    // ---------- 四角 ----------
 
     private fun openEditor(file: File) {
-        composeAfterEdit = true
-        val intent = Intent(this, QuadEditorActivity::class.java)
-            .putExtra(QuadEditorActivity.EXTRA_FILE, file.absolutePath)
-        quadLauncher.launch(intent)
+        editorTarget = file
+        quadLauncher.launch(
+            Intent(this, QuadEditorActivity::class.java)
+                .putExtra(QuadEditorActivity.EXTRA_FILE, file.absolutePath)
+        )
     }
 
-    private val quadLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode != Activity.RESULT_OK) {
-            composeAfterEdit = false
+    private val quadLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val target = editorTarget
+        if (result.resultCode != Activity.RESULT_OK || target == null) {
+            discardSession()
             return@registerForActivityResult
         }
         val data = result.data ?: return@registerForActivityResult
-        val q = data.getFloatArrayExtra(QuadEditorActivity.EXTRA_QUAD) ?: return@registerForActivityResult
-        val w = data.getIntExtra(QuadEditorActivity.EXTRA_IMAGE_W, 0)
-        val h = data.getIntExtra(QuadEditorActivity.EXTRA_IMAGE_H, 0)
-
-        if (composeAfterEdit && pendingFiles.size >= 2) {
-            composeAfterEdit = false
-            compose(pendingFiles, q)
-        } else {
-            status.text = String.format(
-                Locale.US,
-                "四角已确认（编辑图 %dx%d）\nTL(%.0f,%.0f) TR(%.0f,%.0f)\nBR(%.0f,%.0f) BL(%.0f,%.0f)",
-                w, h, q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7]
-            )
+        val quad = data.getFloatArrayExtra(QuadEditorActivity.EXTRA_QUAD)
+            ?: return@registerForActivityResult
+        val editorWidth = data.getIntExtra(QuadEditorActivity.EXTRA_IMAGE_W, 0)
+        val scaled = scaleQuadToFile(quad, editorWidth, target) ?: run {
+            showFailure(getString(R.string.fail_decode))
+            return@registerForActivityResult
         }
+        lastQuad = scaled
+        compose(scaled)
     }
 
     /**
-     * 用底图四角作为唯一人工输入：其余照片的四角由特征单应推出来，用户只需拖一次。
+     * 四角坐标是在编辑器分辨率下给的，合成用的是原始缓存图。
+     * 两处分辨率可能不同，必须按实际宽高换算，不能直接拿来用。
      */
-    private fun compose(files: List<File>, quadValues: FloatArray) {
-        status.text = "正在合成 ${files.size} 张…"
+    private fun scaleQuadToFile(quad: FloatArray, editorWidth: Int, file: File): FloatArray? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        if (editorWidth <= 0) return quad.copyOf()
+        val scale = bounds.outWidth.toFloat() / editorWidth
+        return if (scale == 1f) quad.copyOf() else FloatArray(quad.size) { quad[it] * scale }
+    }
+
+    // ---------- 合成 ----------
+
+    private fun compose(quad: FloatArray) {
+        val files = photos.toList()
+        if (files.size < MIN_PHOTOS) {
+            promptAddMore()
+            return
+        }
+        abandoned = false
+        showBusy(getString(R.string.busy_composing, files.size), indeterminate = false)
+
+        val pipeline = PipelineProvider.get(this)
+        activePipeline = pipeline
+
         Thread {
+            var base: Mat? = null
+            val auxes = ArrayList<Mat>()
             try {
-                val base = PhotoStore.load(files[0]) ?: throw IllegalStateException("第 1 张解码失败")
-                val baseQuad = toPoints(quadValues)
-                val auxes = files.drop(1).mapNotNull { PhotoStore.load(it) }
-                if (auxes.isEmpty()) throw IllegalStateException("补图解码失败")
-                // 各补图到基图的单应，后续每一轮合成共用
                 val cfg = ConfigLoader.load(this)
+                val baseMat = PhotoStore.load(files[0])
+                    ?: throw IllegalStateException(getString(R.string.fail_decode))
+                base = baseMat
+                for (i in 1 until files.size) {
+                    PhotoStore.load(files[i])?.let { auxes.add(it) }
+                }
+                if (auxes.isEmpty()) throw IllegalStateException(getString(R.string.fail_decode))
+
+                val baseQuad = toPoints(quad)
                 val hList = auxes.map { aux ->
                     Geometry.homographyFromFeatures(
-                        base, aux, baseQuad, Geometry.insetQuad(aux.cols(), aux.rows()), cfg.align
+                        baseMat, aux, baseQuad,
+                        Geometry.insetQuad(aux.cols(), aux.rows()), cfg.align
                     )
                 }
-                val pipeline = Pipeline(this, cfg)
-                val res = pipeline.runMulti("photo", base, auxes, baseQuad, hList)
-                runOnUiThread { showSingle(res) }
+                val result = pipeline.runMulti("photo", baseMat, auxes, baseQuad, hList)
+                if (abandoned) return@Thread
+
+                val saved = TaskStore.save(
+                    this, result.restored, result.coverage, result.elapsedMs, files.size
+                )
+                runOnUiThread {
+                    hideBusy()
+                    if (saved == null) {
+                        showFailure(getString(R.string.fail_save))
+                    } else {
+                        discardSession()
+                        refreshTasks()
+                        openResult(saved)
+                    }
+                }
+            } catch (c: CancellationException) {
+                runOnUiThread { hideBusy() }
             } catch (t: Throwable) {
-                runOnUiThread { status.text = "合成失败：${t.message ?: t.javaClass.simpleName}" }
+                Log.w(TAG, "合成失败: ${t.message}")
+                runOnUiThread {
+                    hideBusy()
+                    showFailure(t.message ?: getString(R.string.fail_message))
+                }
+            } finally {
+                base?.release()
+                auxes.forEach { it.release() }
+                activePipeline = null
             }
         }.start()
+    }
+
+    private fun retryCompose() {
+        failOverlay.visibility = View.GONE
+        val quad = lastQuad
+        if (quad != null) compose(quad) else onPhotosReady()
+    }
+
+    private fun cancelCompose() {
+        abandoned = true
+        activePipeline?.cancel()
+        hideBusy()
     }
 
     private fun toPoints(values: FloatArray): Array<Point> = arrayOf(
@@ -180,89 +387,110 @@ class MainActivity : AppCompatActivity() {
         Point(values[6].toDouble(), values[7].toDouble())
     )
 
-    private fun showSingle(r: PipelineResult) {
-        val saved = TaskStore.save(this, r.restored, r.coverage, r.elapsedMs, pendingFiles.size)
-        val summary = StringBuilder()
-        summary.append(
-            String.format(
-                Locale.US,
-                "%s | %d 张 | 总耗时 %d ms | 覆盖 %.1f%% | 盲区 %.1f%% | 接缝比 %.2f | 接缝跳变 %.2f\n",
-                r.id, pendingFiles.size, r.elapsedMs, r.coverage * 100.0, r.blindRatio * 100.0,
-                r.seamRatio, r.seamStep
-            )
-        )
-        for ((name, at) in r.steps) {
-            summary.append(String.format(Locale.US, "  %-10s @ %d ms\n", name, at))
-        }
-        if (r.diag.isNotEmpty()) summary.append("  ").append(r.diag).append("\n")
-        summary.append(if (saved == null) "已存入最近任务失败\n" else "已存入最近任务\n")
-        status.text = summary.toString()
+    // ---------- 遮罩 ----------
 
-        image0.setImageBitmap(r.restored)
-        meta0.text = String.format(Locale.US, "%s 输出 %dx%d", r.id, r.restored.width, r.restored.height)
-        image1.setImageDrawable(null)
-        meta1.text = ""
+    private fun showBusy(message: String, indeterminate: Boolean) {
+        busyTitle.text = message
+        busyThumb.setImageBitmap(baseThumbnail())
+        busyOverlay.visibility = View.VISIBLE
+        progressAnimator?.cancel()
+        busyBar.isIndeterminate = indeterminate
+        if (!indeterminate) {
+            busyBar.progress = 0
+            progressAnimator = ValueAnimator.ofInt(0, PROGRESS_CEILING).apply {
+                duration = PROGRESS_ANIM_MS
+                addUpdateListener { busyBar.progress = it.animatedValue as Int }
+                start()
+            }
+        }
+    }
+
+    private fun hideBusy() {
+        progressAnimator?.cancel()
+        progressAnimator = null
+        busyOverlay.visibility = View.GONE
+    }
+
+    private fun baseThumbnail(): Bitmap? {
+        val file = photos.firstOrNull() ?: return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > BUSY_THUMB_SIDE) sample *= 2
+        return BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sample }
+        )
+    }
+
+    private fun showFailure(message: String) {
+        hideBusy()
+        failMessage.text = message
+        failOverlay.visibility = View.VISIBLE
+    }
+
+    // ---------- 会话 ----------
+
+    private fun ensureSession(): File? {
+        sessionDir?.let { return it }
+        return try {
+            PhotoStore.newSession(this).also { sessionDir = it }
+        } catch (t: Throwable) {
+            Log.w(TAG, "创建会话失败: ${t.message}")
+            null
+        }
+    }
+
+    private fun discardSession() {
+        PhotoStore.discardSession(sessionDir)
+        sessionDir = null
+        photos.clear()
+        lastQuad = null
+        editorTarget = null
+    }
+
+    // ---------- 开发回归 ----------
+
+    private fun confirmSamples() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.samples_title)
+            .setMessage(R.string.samples_message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_run) { _, _ -> runSamples() }
+            .show()
     }
 
     private fun runSamples() {
-        runButton.isEnabled = false
-        status.text = "运行中，请稍候（首次会加载模型）"
-
+        showBusy(getString(R.string.samples_title), indeterminate = true)
         Thread {
-            val pipeline = Pipeline(this, ConfigLoader.load(this))
-            val results = ArrayList<PipelineResult>()
-            var error: String? = null
             try {
+                val pipeline = PipelineProvider.get(this)
                 val samples = pipeline.loadSamples()
+                var count = 0
                 for (sample in samples) {
-                    runOnUiThread { status.text = "正在处理 ${sample.id} ..." }
-                    results.add(pipeline.run(sample))
+                    val result = pipeline.run(sample)
+                    if (TaskStore.save(
+                            this, result.restored, result.coverage, result.elapsedMs, 2
+                        ) != null
+                    ) {
+                        count++
+                    }
+                }
+                runOnUiThread {
+                    hideBusy()
+                    refreshTasks()
+                    Toast.makeText(
+                        this, getString(R.string.samples_done, count), Toast.LENGTH_SHORT
+                    ).show()
                 }
             } catch (t: Throwable) {
-                error = t.message ?: t.javaClass.simpleName
-            }
-
-            runOnUiThread {
-                if (error != null) {
-                    status.text = "运行失败：$error"
-                    runButton.isEnabled = true
-                    return@runOnUiThread
+                Log.w(TAG, "样张运行失败: ${t.message}")
+                runOnUiThread {
+                    hideBusy()
+                    showFailure(t.message ?: getString(R.string.fail_message))
                 }
-                bindResults(results)
-                runButton.isEnabled = true
             }
         }.start()
-    }
-
-    private fun bindResults(results: List<PipelineResult>) {
-        val summary = StringBuilder()
-        summary.append("本轮共 ${results.size} 组\n")
-        for (r in results) {
-            summary.append(
-                String.format(
-                    Locale.US,
-                    "%s | 总耗时 %d ms | 覆盖 %.1f%% | 盲区 %.1f%% | 接缝比 %.2f | 接缝跳变 %.2f\n",
-                    r.id, r.elapsedMs, r.coverage * 100.0, r.blindRatio * 100.0, r.seamRatio, r.seamStep
-                )
-            )
-            for ((name, at) in r.steps) {
-                summary.append(String.format(Locale.US, "  %-10s @ %d ms\n", name, at))
-            }
-            if (r.diag.isNotEmpty()) {
-                summary.append("  ").append(r.diag).append("\n")
-            }
-        }
-        status.text = summary.toString()
-
-        val first = results.getOrNull(0)
-        val second = results.getOrNull(1)
-        if (first != null) {
-            image0.setImageBitmap(first.restored)
-            meta0.text = String.format(Locale.US, "%s 输出 %dx%d", first.id, first.restored.width, first.restored.height)
-        }
-        if (second != null) {
-            image1.setImageBitmap(second.restored)
-            meta1.text = String.format(Locale.US, "%s 输出 %dx%d", second.id, second.restored.width, second.restored.height)
-        }
     }
 }

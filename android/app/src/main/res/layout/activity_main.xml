@@ -1,104 +1,170 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:background="@color/paper"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
         <TextView
-            android:id="@+id/title"
+            android:id="@+id/homeTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="遮不住 · 拍摄合成验证"
-            android:textSize="18sp"
+            android:paddingStart="20dp"
+            android:paddingTop="24dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="18dp"
+            android:text="@string/app_name"
+            android:textColor="@color/ink"
+            android:textSize="33sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/subtitle"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/gallery"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="选 2~4 张同场景照片，先确认底图四角，再自动对齐并逐张补上被遮挡的画面。"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/runButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="运行样张测试" />
-
-        <Button
-            android:id="@+id/pickButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="选照片合成（2~4 张）" />
-
-        <Button
-            android:id="@+id/sampleFlowButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="用样张走真实流程（3 张）" />
-
-        <Button
-            android:id="@+id/quadButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="四角微调（用 group0 样张）" />
-
-        <Button
-            android:id="@+id/recentButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="最近任务" />
-
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="等待运行"
-            android:textSize="13sp"
-            android:fontFamily="monospace" />
-
-        <ImageView
-            android:id="@+id/image0"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:adjustViewBounds="true"
-            android:scaleType="fitCenter" />
-
-        <TextView
-            android:id="@+id/meta0"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:fontFamily="monospace" />
-
-        <ImageView
-            android:id="@+id/image1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:adjustViewBounds="true"
-            android:scaleType="fitCenter" />
-
-        <TextView
-            android:id="@+id/meta1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:fontFamily="monospace" />
-
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="24dp" />
     </LinearLayout>
-</ScrollView>
+
+    <FrameLayout
+        android:id="@+id/busyOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/overlay_scrim"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <ImageView
+                android:id="@+id/busyThumb"
+                android:layout_width="132dp"
+                android:layout_height="100dp"
+                android:background="@drawable/bg_thumb"
+                android:clipToOutline="true"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/busyTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:textColor="@color/ink"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <ProgressBar
+                android:id="@+id/busyBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="148dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="16dp"
+                android:max="100"
+                android:progress="0"
+                android:progressBackgroundTint="@color/hairline"
+                android:progressTint="@color/ink" />
+
+            <TextView
+                android:id="@+id/busyHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/busy_approx"
+                android:textColor="@color/ink_tertiary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/busyCancel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="26dp"
+                android:padding="8dp"
+                android:text="@string/action_cancel"
+                android:textColor="@color/ink_tertiary"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/failOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/overlay_scrim"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp">
+
+            <ImageView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:contentDescription="@string/cd_warning"
+                android:src="@drawable/ic_warning" />
+
+            <TextView
+                android:id="@+id/failTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/fail_title"
+                android:textColor="@color/ink"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/failMessage"
+                android:layout_width="232dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="@string/fail_message"
+                android:textColor="@color/ink_tertiary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/retryButton"
+                android:layout_width="200dp"
+                android:layout_height="50dp"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/bg_capsule_black"
+                android:gravity="center"
+                android:text="@string/action_retry"
+                android:textColor="@color/paper"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/swapButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:padding="6dp"
+                android:text="@string/action_swap_photos"
+                android:textColor="@color/ink_tertiary"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

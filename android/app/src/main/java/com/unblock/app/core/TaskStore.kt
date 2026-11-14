@@ -8,9 +8,12 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 
 data class TaskItem(
     val image: File,
+    val thumb: File,
     val time: Long,
     val width: Int,
     val height: Int,
@@ -19,8 +22,12 @@ data class TaskItem(
     val sources: Int
 )
 
-/** App 内的最近任务：图片落在私有目录，元信息写在同名 .json 里。 */
+/** App 内的最近任务：图片与缩略图落在私有目录，元信息写在同名 .json 里。 */
 object TaskStore {
+
+    /** 列表缩略图的长边，方形裁切在界面层做，这里只保证解码够快。 */
+    private const val THUMB_SIDE = 480
+    private const val THUMB_QUALITY = 85
 
     private fun dir(context: Context): File {
         val d = File(context.filesDir, "tasks")
@@ -39,6 +46,8 @@ object TaskStore {
             val stamp = System.currentTimeMillis()
             val image = File(dir(context), "task_$stamp.jpg")
             FileOutputStream(image).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+            val thumb = File(dir(context), "task_${stamp}_thumb.jpg")
+            writeThumb(bitmap, thumb)
             val meta = JSONObject().apply {
                 put("time", stamp)
                 put("width", bitmap.width)
@@ -48,7 +57,7 @@ object TaskStore {
                 put("sources", sources)
             }
             File(dir(context), "task_$stamp.json").writeText(meta.toString(), Charsets.UTF_8)
-            TaskItem(image, stamp, bitmap.width, bitmap.height, coverage, elapsedMs, sources)
+            TaskItem(image, thumb, stamp, bitmap.width, bitmap.height, coverage, elapsedMs, sources)
         } catch (t: Throwable) {
             null
         }
@@ -63,9 +72,11 @@ object TaskStore {
                 val stamp = obj.optLong("time")
                 val image = File(dir(context), "task_$stamp.jpg")
                 if (!image.exists()) continue
+                val thumb = File(dir(context), "task_${stamp}_thumb.jpg")
                 out.add(
                     TaskItem(
                         image,
+                        if (thumb.exists()) thumb else image,
                         stamp,
                         obj.optInt("width"),
                         obj.optInt("height"),
@@ -81,13 +92,25 @@ object TaskStore {
         return out.sortedByDescending { it.time }
     }
 
+    /** 删除一条记录：结果图、缩略图、元信息一起清掉；系统相册里的原图不受影响。 */
+    fun delete(context: Context, item: TaskItem) {
+        item.image.delete()
+        item.thumb.delete()
+        File(dir(context), "task_${item.time}.json").delete()
+    }
+
+    private fun writeThumb(bitmap: Bitmap, target: File) {
+        val longest = max(bitmap.width, bitmap.height)
+        val scale = min(1f, THUMB_SIDE.toFloat() / longest)
+        val w = max(1, (bitmap.width * scale).toInt())
+        val h = max(1, (bitmap.height * scale).toInt())
+        val thumb = Bitmap.createScaledBitmap(bitmap, w, h, true)
+        FileOutputStream(target).use { thumb.compress(Bitmap.CompressFormat.JPEG, THUMB_QUALITY, it) }
+        if (thumb !== bitmap) thumb.recycle()
+    }
+
     fun label(item: TaskItem): String {
         val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.US)
-        return String.format(
-            Locale.US,
-            "%s   %d 张  %dx%d  覆盖 %.0f%%  %dms",
-            fmt.format(Date(item.time)), item.sources, item.width, item.height,
-            item.coverage * 100.0, item.elapsedMs
-        )
+        return fmt.format(Date(item.time))
     }
 }

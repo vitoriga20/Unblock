@@ -4,13 +4,13 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import com.unblock.app.R
 import kotlin.math.hypot
 import kotlin.math.min
 
@@ -37,22 +37,22 @@ class QuadEditorView @JvmOverloads constructor(
     private var active = -1
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FFC53D")
+        color = context.getColor(R.color.handle)
         style = Paint.Style.STROKE
-        strokeWidth = dip(2f)
+        strokeWidth = dip(1.5f)
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#33FFC53D")
+        color = context.getColor(R.color.handle_fill)
         style = Paint.Style.FILL
     }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FFC53D")
+        color = context.getColor(R.color.handle)
         style = Paint.Style.FILL
     }
     private val handleStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#1A1A1A")
+        color = context.getColor(R.color.handle_stroke)
         style = Paint.Style.STROKE
-        strokeWidth = dip(2f)
+        strokeWidth = dip(1.5f)
     }
     private val path = Path()
 

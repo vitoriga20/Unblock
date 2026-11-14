@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 基础色：纯黑白方案，只有删除操作允许用红 -->
+    <color name="paper">#FFFFFFFF</color>
+    <color name="ink">#FF111114</color>
+    <color name="ink_secondary">#FF6C6C72</color>
+    <color name="ink_tertiary">#FF8E8E93</color>
+    <color name="ink_quaternary">#FFC7C7CC</color>
+    <color name="hairline">#FFE3E3E7</color>
+    <color name="canvas">#FFF2F2F7</color>
+    <color name="tile_stroke">#FFD6D6DC</color>
+    <color name="thumb_bg">#FFF5F5F7</color>
+    <color name="destructive">#FFB3261E</color>
+
+    <!-- 看图 / 四角页 -->
+    <color name="viewer_bg">#FF0A0A0B</color>
+    <color name="on_viewer">#FFFFFFFF</color>
+    <color name="on_viewer_secondary">#8CFFFFFF</color>
+    <color name="on_viewer_tertiary">#73FFFFFF</color>
+
+    <!-- 遮罩与标注 -->
+    <color name="overlay_scrim">#B3FFFFFF</color>
+    <color name="handle">#FFFFFFFF</color>
+    <color name="handle_stroke">#FF1A1A1A</color>
+    <color name="handle_fill">#33FFFFFF</color>
+</resources>

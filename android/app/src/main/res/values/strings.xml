@@ -1,4 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">遮不住</string>
+
+    <string name="cd_import">导入照片</string>
+    <string name="cd_back">返回</string>
+    <string name="cd_share">分享</string>
+    <string name="cd_result_image">合成结果</string>
+    <string name="cd_warning">无法合成</string>
+
+    <string name="action_cancel">取消</string>
+    <string name="action_run">运行</string>
+    <string name="action_delete">删除</string>
+    <string name="action_take_photo">拍照</string>
+    <string name="action_pick_album">从相册选择</string>
+    <string name="action_retry">重试</string>
+    <string name="action_swap_photos">换一组照片</string>
+    <string name="action_confirm_compose">确认并合成</string>
+    <string name="action_reselect">重选</string>
+    <string name="action_save">保存到相册</string>
+    <string name="action_saved">已保存到相册</string>
+
+    <string name="title_align_quad">对齐黑板</string>
+    <string name="title_result">结果</string>
+    <string name="title_import">添加照片</string>
+
+    <string name="quad_loading">正在载入图片…</string>
+    <string name="quad_load_failed">图片载入失败</string>
+    <string name="quad_detecting">正在检测屏幕边框…</string>
+    <string name="quad_hint_detected">已自动定位四角，拖动贴合黑板边缘</string>
+    <string name="quad_hint_manual">拖动四个角贴合黑板边缘</string>
+
+    <string name="busy_importing">正在导入照片</string>
+    <string name="busy_composing">正在合成 %1$d 张照片</string>
+    <string name="busy_approx">约 4 秒</string>
+
+    <string name="dialog_need_more_title">还需要至少 1 张</string>
+    <string name="dialog_need_more_message">同一块黑板、换个机位再补一张，才能补上被挡住的部分。</string>
+    <string name="dialog_delete_title">删除这张合成图？</string>
+    <string name="dialog_delete_message">只移除这条记录，系统相册里的原图不受影响。</string>
+
+    <string name="fail_title">这两张补不上</string>
+    <string name="fail_message">重叠区域两张都被挡住了，没有可见像素可以搬过来。换一张不同机位的照片再试。</string>
+    <string name="fail_decode">照片解码失败，请重新选择</string>
+    <string name="fail_save">结果保存失败，请重试</string>
+    <string name="fail_import">照片导入失败，请重新选择</string>
+
+    <string name="result_meta">%1$d 张照片合成 · %2$s</string>
+    <string name="save_failed">保存失败</string>
+    <string name="share_failed">分享失败</string>
+
+    <string name="samples_done">样张跑完 %1$d 组</string>
+    <string name="samples_title">运行内置样张</string>
+    <string name="samples_message">仅用于回归验证，结果会存入最近任务。</string>
 </resources>

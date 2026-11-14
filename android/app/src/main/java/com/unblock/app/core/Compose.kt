@@ -99,6 +99,10 @@ object Compose {
         // 上采样回全分辨率；插值不会超出已钳位的取值范围，因此不必再钳位一次
         val out = Mat()
         Imgproc.resize(clamped, out, full, 0.0, 0.0, Imgproc.INTER_LINEAR)
+        listOf(
+            baseS, auxS, regionS, baseF, auxF, auxSafe, ratio, weight, weight3,
+            weightedRatio, num, den, denSafe, den3, gm, noData, noData8, lo, hi, clamped
+        ).forEach { it.release() }
         return out
     }
 
@@ -193,6 +197,8 @@ object Compose {
         Core.multiply(auxF, gainMap, out)
         val result = Mat()
         out.convertTo(result, CvType.CV_8UC3)
+        auxF.release()
+        out.release()
         return result
     }
 
@@ -245,6 +251,8 @@ object Compose {
 
         val out = Mat()
         sum.convertTo(out, CvType.CV_8UC3)
+        listOf(m8, dist, ramp, alpha, maskF, validF, alpha3, ones, inv, inv3, baseF, auxF, a, b, sum)
+            .forEach { it.release() }
         return out
     }
 
