@@ -32,7 +32,7 @@
 
     <string name="busy_importing">正在导入照片</string>
     <string name="busy_composing">正在合成 %1$d 张照片</string>
-    <string name="busy_approx">约 4 秒</string>
+    <string name="busy_approx">约 %1$d 秒</string>
 
     <string name="dialog_need_more_title">还需要至少 1 张</string>
     <string name="dialog_need_more_message">同一块黑板、换个机位再补一张，才能补上被挡住的部分。</string>

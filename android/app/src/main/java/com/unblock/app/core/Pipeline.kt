@@ -429,10 +429,28 @@ class Pipeline(private val context: Context, private val cfg: PipelineConfig) {
 }
 
 /**
+ * 界面参数：同样是 config.json 的一部分，避免把「大约几秒」这类产品语义写死在代码里。
+ */
+data class UiConfig(
+    val estimateSeconds: Int = 4
+)
+
+/**
  * 从 assets/config.json 的 params 段读取全部算法参数，与 PC 端保持同一份口径。
  * 缺省值仍由各 data class 提供，便于局部覆盖。
  */
 object ConfigLoader {
+
+    fun loadUi(context: Context): UiConfig {
+        val d = UiConfig()
+        return try {
+            val text = context.assets.open("config.json").use { it.readBytes().toString(Charsets.UTF_8) }
+            val ui = JSONObject(text).optJSONObject("params")?.optJSONObject("ui") ?: return d
+            d.copy(estimateSeconds = ui.optInt("estimate_seconds", d.estimateSeconds))
+        } catch (t: Throwable) {
+            d
+        }
+    }
 
     fun load(context: Context): PipelineConfig {
         val d = PipelineConfig()

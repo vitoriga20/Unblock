@@ -48,7 +48,6 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_PHOTOS = 4
         private const val PROVIDER_SUFFIX = ".fileprovider"
         private const val PROGRESS_CEILING = 90
-        private const val PROGRESS_ANIM_MS = 5000L
         private const val BUSY_THUMB_SIDE = 320
         private const val TAG = "Unblock"
     }
@@ -58,8 +57,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var busyThumb: ImageView
     private lateinit var busyTitle: TextView
     private lateinit var busyBar: ProgressBar
+    private lateinit var busyHint: TextView
     private lateinit var failOverlay: View
     private lateinit var failMessage: TextView
+
+    private val uiConfig by lazy { ConfigLoader.loadUi(this) }
 
     private var progressAnimator: ValueAnimator? = null
 
@@ -86,6 +88,7 @@ class MainActivity : AppCompatActivity() {
         busyThumb = findViewById(R.id.busyThumb)
         busyTitle = findViewById(R.id.busyTitle)
         busyBar = findViewById(R.id.busyBar)
+        busyHint = findViewById(R.id.busyHint)
         failOverlay = findViewById(R.id.failOverlay)
         failMessage = findViewById(R.id.failMessage)
 
@@ -395,10 +398,14 @@ class MainActivity : AppCompatActivity() {
         busyOverlay.visibility = View.VISIBLE
         progressAnimator?.cancel()
         busyBar.isIndeterminate = indeterminate
+        // 预估耗时只在合成时才有意义，导入阶段不显示
+        busyHint.visibility = if (indeterminate) View.GONE else View.VISIBLE
         if (!indeterminate) {
+            val estimateMs = uiConfig.estimateSeconds * 1000L
+            busyHint.text = getString(R.string.busy_approx, uiConfig.estimateSeconds)
             busyBar.progress = 0
             progressAnimator = ValueAnimator.ofInt(0, PROGRESS_CEILING).apply {
-                duration = PROGRESS_ANIM_MS
+                duration = estimateMs
                 addUpdateListener { busyBar.progress = it.animatedValue as Int }
                 start()
             }

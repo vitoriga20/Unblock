@@ -74,6 +74,9 @@
       "target_long_side": 1920,
       "target_aspect": null
     },
+    "ui": {
+      "estimate_seconds": 4
+    },
     "debug": {
       "dump": false
     }
