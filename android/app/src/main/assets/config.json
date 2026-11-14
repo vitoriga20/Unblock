@@ -1,0 +1,81 @@
+{
+  "groups": [
+    {
+      "id": "group0",
+      "base": "0_0.jpg",
+      "aux": "0_1.jpg",
+      "corners": {
+        "base": [[48, 120], [3852, 410], [3848, 2592], [44, 2640]],
+        "aux": [[-420, 292], [4060, 100], [4060, 2620], [-420, 2664]]
+      }
+    },
+    {
+      "id": "group1",
+      "base": "1_0.jpg",
+      "aux": "1_1.jpg",
+      "corners": {
+        "base": [[48, 528], [4032, 760], [4032, 2740], [48, 2760]],
+        "aux": [[32, 180], [4072, 420], [4072, 2640], [32, 2760]]
+      }
+    }
+  ],
+  "params": {
+    "align": {
+      "sift_nfeatures": 8000,
+      "ratio_test": 0.75,
+      "ransac_thresh": 6.0,
+      "min_inliers": 30,
+      "feature_max_side": 1024,
+      "residual_refine": true,
+      "residual_grid": 6,
+      "residual_max_px": 24,
+      "residual_smooth": 3,
+      "residual_max_side": 1280,
+      "residual_min_matches": 40
+    },
+    "occlusion": {
+      "diff_blur_kernel": 9,
+      "diff_thresh": 26,
+      "morph_open_kernel": 5,
+      "morph_close_kernel": 15,
+      "dilate_kernel": 15,
+      "person_block_kernel": 81,
+      "min_blob_area_ratio": 0.0015,
+      "border_trim_px": 2,
+      "shadow_enable": true,
+      "shadow_ratio": 0.94,
+      "shadow_delta": 4,
+      "shadow_max_px": 600,
+      "shadow_max_ratio": 0.12
+    },
+    "compose": {
+      "edge_soft_px": 5,
+      "min_alpha": 0.5,
+      "gain_clip_min": 0.75,
+      "gain_clip_max": 1.35,
+      "gain_smooth": 45,
+      "gain_exclude_px": 12,
+      "seam_band_px": 2,
+      "color_match_enable": true,
+      "color_match_ring_px": 81,
+      "color_match_flat_grad_max": 12.0,
+      "color_match_min_ring_px": 2000,
+      "color_match_std_clip_min": 0.6,
+      "color_match_std_clip_max": 1.6,
+      "color_match_align_l": false
+    },
+    "segment": {
+      "model": "model/yolov8n-seg.onnx",
+      "input_size": 640,
+      "conf": 0.1,
+      "enabled": true
+    },
+    "rectify": {
+      "target_long_side": 1920,
+      "target_aspect": null
+    },
+    "debug": {
+      "dump": false
+    }
+  }
+}

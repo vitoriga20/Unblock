@@ -1,0 +1,103 @@
+{
+  "workspace": {
+    "input_dir": "D:/KB/Unblock/有遮挡的图片",
+    "output_dir": "D:/KB/Unblock/output",
+    "debug_dir": "D:/KB/Unblock/output/debug"
+  },
+  "groups": [
+    {
+      "id": "group0",
+      "base": "0_0.jpg",
+      "aux": "0_1.jpg",
+      "corners": {
+        "base": [[48, 120], [3852, 410], [3848, 2592], [44, 2640]],
+        "aux": [[-420, 292], [4060, 100], [4060, 2620], [-420, 2664]]
+      }
+    },
+    {
+      "id": "group1",
+      "base": "1_0.jpg",
+      "aux": "1_1.jpg",
+      "corners": {
+        "base": [[48, 528], [4032, 760], [4032, 2740], [48, 2760]],
+        "aux": [[32, 180], [4072, 420], [4072, 2640], [32, 2760]]
+      }
+    }
+  ],
+  "screen": {
+    "detect_max_side": 1600,
+    "canny_low": 40,
+    "canny_high": 120,
+    "blur_kernel": 5,
+    "dark_percentile": 35,
+    "min_dark_ratio": 0.10,
+    "max_median_luma": 125,
+    "min_bright_ratio": 0.004,
+    "max_bright_ratio": 0.45,
+    "min_width_ratio": 0.35,
+    "min_height_ratio": 0.30,
+    "require_center_inside": true,
+    "min_area_ratio": 0.12,
+    "max_area_ratio": 0.98,
+    "quad_angle_tolerance_deg": 25,
+    "aspect_min": 1.15,
+    "aspect_max": 2.45
+  },
+  "align": {
+    "sift_nfeatures": 8000,
+    "ratio_test": 0.75,
+    "ransac_thresh": 6.0,
+    "match_max_side": 2000,
+    "refine": true,
+    "residual_refine": true,
+    "residual_grid": 6,
+    "residual_max_px": 24,
+    "residual_smooth": 3
+  },
+  "segment": {
+    "model": "yolov8n-seg.pt",
+    "imgsz": 1280,
+    "conf": 0.1,
+    "tile": 3,
+    "tile_overlap": 0.2
+  },
+  "occlusion": {
+    "diff_blur_kernel": 9,
+    "diff_thresh": 26,
+    "morph_open_kernel": 5,
+    "morph_close_kernel": 15,
+    "dilate_kernel": 15,
+    "person_block_kernel": 81,
+    "min_blob_area_ratio": 0.0015,
+    "border_trim_px": 2,
+    "shadow_enable": true,
+    "shadow_ratio": 0.94,
+    "shadow_delta": 4,
+    "shadow_max_px": 600,
+    "shadow_max_ratio": 0.12
+  },
+  "compose": {
+    "edge_soft_px": 5,
+    "min_alpha": 0.5,
+    "gain_clip_min": 0.75,
+    "gain_clip_max": 1.35,
+    "gain_smooth": 45,
+    "gain_exclude_px": 12,
+    "seam_band_px": 2,
+    "color_match_enable": true,
+    "color_match_ring_px": 81,
+    "color_match_flat_grad_max": 12.0,
+    "color_match_min_ring_px": 2000,
+    "color_match_std_clip": [0.6, 1.6],
+    "color_match_align_l": false
+  },
+  "rectify": {
+    "target_aspect": null,
+    "target_long_side": 1920
+  },
+  "output": {
+    "jpeg_quality": 95,
+    "restored_prefix": "restored",
+    "debug_prefix": "dbg"
+  }
+}
