@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowInsetsControllerCompat
 import com.unblock.app.R
+import com.unblock.app.core.ConfigLoader
 import com.unblock.app.core.MatTools
 import com.unblock.app.core.PhotoStore
 import com.unblock.app.core.ScreenDetector
@@ -94,7 +95,7 @@ class QuadEditorActivity : AppCompatActivity() {
 
         Thread {
             val quad = try {
-                ScreenDetector.detect(gray)?.quad
+                ScreenDetector.detectBest(gray, ConfigLoader.load(this).screen).quad
             } catch (t: Throwable) {
                 Log.w(TAG, "四角检测失败: ${t.message}")
                 null

@@ -14,6 +14,7 @@ data class ComposeConfig(
     val gainClipMin: Double = 0.75,
     val gainClipMax: Double = 1.35,
     val gainSmooth: Int = 45,
+    val gainGrid: Int = 8,
     val gainExcludePx: Int = 12,
     val seamBandPx: Int = 2,
     val colorMatchEnable: Boolean = true,
@@ -104,6 +105,103 @@ object Compose {
             weightedRatio, num, den, denSafe, den3, gm, noData, noData8, lo, hi, clamped
         ).forEach { it.release() }
         return out
+    }
+
+    /**
+     * 分块中位数增益场，用于遮挡检测前的粗校正。
+     * 遮挡检测如果直接比较原始两图，视角造成的幕面亮度差会被当成遮挡。
+     */
+    fun estimateGainMapRobust(base: Mat, aux: Mat, region: Mat, cfg: ComposeConfig,
+                              grid: Int = 8): Mat {
+        val ds = 4
+        val small = Size((base.cols() / ds).toDouble(), (base.rows() / ds).toDouble())
+        val baseS = Mat()
+        val auxS = Mat()
+        val regionS = Mat()
+        Imgproc.resize(base, baseS, small, 0.0, 0.0, Imgproc.INTER_AREA)
+        Imgproc.resize(aux, auxS, small, 0.0, 0.0, Imgproc.INTER_AREA)
+        Imgproc.resize(region, regionS, small, 0.0, 0.0, Imgproc.INTER_AREA)
+
+        val b = Mat()
+        val a = Mat()
+        baseS.convertTo(b, CvType.CV_32FC3, 1.0, 1.0)
+        auxS.convertTo(a, CvType.CV_32FC3, 1.0, 1.0)
+        val ratio = Mat()
+        Core.divide(b, a, ratio)
+
+        val w = small.width.toInt()
+        val h = small.height.toInt()
+        val regionBytes = ByteArray(w * h)
+        regionS.get(0, 0, regionBytes)
+        val ratioData = FloatArray(w * h * 3)
+        ratio.get(0, 0, ratioData)
+
+        val g = maxOf(2, grid)
+        val cell = Mat(g, g, CvType.CV_32FC3, Scalar(1.0, 1.0, 1.0))
+        val filled = Array(g) { BooleanArray(g) }
+        val global = ArrayList<Double>()
+        val globalData = ArrayList<Double>()
+
+        for (gy in 0 until g) {
+            for (gx in 0 until g) {
+                val y0 = gy * h / g
+                val y1 = (gy + 1) * h / g
+                val x0 = gx * w / g
+                val x1 = (gx + 1) * w / g
+                val ch = Array(3) { ArrayList<Double>() }
+                for (y in y0 until y1) {
+                    for (x in x0 until x1) {
+                        val i = y * w + x
+                        if ((regionBytes[i].toInt() and 0xFF) == 0) continue
+                        val p = i * 3
+                        for (c in 0 until 3) ch[c].add(ratioData[p + c].toDouble())
+                    }
+                }
+                if (ch[0].size >= 50) {
+                    val med = DoubleArray(3) { c ->
+                        val arr = ch[c].sorted()
+                        arr[arr.size / 2]
+                    }
+                    cell.put(gy, gx, med[0], med[1], med[2])
+                    filled[gy][gx] = true
+                }
+            }
+        }
+
+        // 空格用邻域均值补齐；全空时退回 1
+        var any = false
+        for (gy in 0 until g) for (gx in 0 until g) if (filled[gy][gx]) any = true
+        if (!any) {
+            cell.setTo(Scalar(1.0, 1.0, 1.0))
+        } else {
+            val filledMat = Mat(g, g, CvType.CV_32FC1)
+            for (gy in 0 until g) for (gx in 0 until g) {
+                filledMat.put(gy, gx, if (filled[gy][gx]) 255.0 else 0.0)
+            }
+            val num = Mat()
+            val den = Mat()
+            Imgproc.blur(cell, num, Size(3.0, 3.0))
+            Imgproc.blur(filledMat, den, Size(3.0, 3.0))
+            for (gy in 0 until g) for (gx in 0 until g) {
+                if (filled[gy][gx]) continue
+                val d = den.get(gy, gx)[0]
+                if (d > 1e-6) {
+                    val v = num.get(gy, gx)
+                    cell.put(gy, gx, v[0] / d, v[1] / d, v[2] / d)
+                }
+            }
+            filledMat.release()
+        }
+
+        val field = Mat()
+        Imgproc.resize(cell, field, Size(base.cols().toDouble(), base.rows().toDouble()),
+            0.0, 0.0, Imgproc.INTER_CUBIC)
+        val lo = scalarMat(field.size(), field.type(), cfg.gainClipMin)
+        val hi = scalarMat(field.size(), field.type(), cfg.gainClipMax)
+        Core.max(field, lo, field)
+        Core.min(field, hi, field)
+        listOf(baseS, auxS, regionS, b, a, ratio, cell).forEach { it.release() }
+        return field
     }
 
     /**

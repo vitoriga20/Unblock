@@ -31,6 +31,7 @@
     <string name="quad_hint_manual">拖动四个角贴合黑板边缘</string>
 
     <string name="busy_importing">正在导入照片</string>
+    <string name="busy_analyzing">正在分析哪张更适合当底图…</string>
     <string name="busy_composing">正在合成 %1$d 张照片</string>
     <string name="busy_approx">约 %1$d 秒</string>
 
@@ -44,6 +45,10 @@
     <string name="fail_decode">照片解码失败，请重新选择</string>
     <string name="fail_save">结果保存失败，请重试</string>
     <string name="fail_import">照片导入失败，请重新选择</string>
+    <string name="fail_quality_content">两张照片的内容看起来已经变了。请用同一时刻、同一块板面的两张再试。</string>
+    <string name="fail_quality_align">两张照片对不上。尽量保持机位接近、画面重叠更多，再试一次。</string>
+    <string name="fail_quality_blind">两张在同一块区域都被挡住了，没有可见像素可以补。换一张遮挡位置不同的照片。</string>
+    <string name="fail_quality_coverage">能补回来的区域太少。换一张机位差更大、遮挡位置不同的照片。</string>
 
     <string name="result_meta">%1$d 张照片合成 · %2$s</string>
     <string name="save_failed">保存失败</string>

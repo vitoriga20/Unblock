@@ -21,7 +21,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.unblock.app.core.ConfigLoader
-import com.unblock.app.core.Geometry
 import com.unblock.app.core.PhotoStore
 import com.unblock.app.core.Pipeline
 import com.unblock.app.core.PipelineProvider
@@ -245,11 +244,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onPhotosReady() {
-        if (photos.size >= MIN_PHOTOS) {
-            openEditor(photos[0])
-        } else {
+        if (photos.size < MIN_PHOTOS) {
             promptAddMore()
+            return
         }
+        // 先按遮挡、清晰度、正对程度、曝光选基，再打开四角编辑；
+        // 这样"谁放第一张"不再由用户随手决定。
+        abandoned = false
+        showBusy(getString(R.string.busy_analyzing), indeterminate = true)
+        val pipeline = PipelineProvider.get(this)
+        activePipeline = pipeline
+        val files = photos.toList()
+        Thread {
+            var chosen = 0
+            val mats = ArrayList<Mat>()
+            try {
+                for (f in files) {
+                    PhotoStore.load(f)?.let { mats.add(it) }
+                }
+                if (mats.size >= MIN_PHOTOS) chosen = pipeline.selectBase(mats)
+            } catch (t: Throwable) {
+                Log.w(TAG, "选基失败: ${t.message}")
+            } finally {
+                mats.forEach { it.release() }
+                activePipeline = null
+            }
+            runOnUiThread {
+                if (abandoned) return@runOnUiThread
+                hideBusy()
+                if (chosen in 1 until photos.size) {
+                    val picked = photos.removeAt(chosen)
+                    photos.add(0, picked)
+                }
+                openEditor(photos[0])
+            }
+        }.start()
     }
 
     private fun promptAddMore() {
@@ -323,7 +352,6 @@ class MainActivity : AppCompatActivity() {
             var base: Mat? = null
             val auxes = ArrayList<Mat>()
             try {
-                val cfg = ConfigLoader.load(this)
                 val baseMat = PhotoStore.load(files[0])
                     ?: throw IllegalStateException(getString(R.string.fail_decode))
                 base = baseMat
@@ -333,17 +361,23 @@ class MainActivity : AppCompatActivity() {
                 if (auxes.isEmpty()) throw IllegalStateException(getString(R.string.fail_decode))
 
                 val baseQuad = toPoints(quad)
-                val hList = auxes.map { aux ->
-                    Geometry.homographyFromFeatures(
-                        baseMat, aux, baseQuad,
-                        Geometry.insetQuad(aux.cols(), aux.rows()), cfg.align
-                    )
-                }
-                val result = pipeline.runMulti("photo", baseMat, auxes, baseQuad, hList)
+                val result = pipeline.runMulti("photo", baseMat, auxes, baseQuad)
                 if (abandoned) return@Thread
 
+                val severe = result.issues.any {
+                    it in setOf("coverage_low", "blind_high", "content_changed", "align_failed")
+                }
+                if (severe) {
+                    val message = qualityMessage(result.issues)
+                    runOnUiThread {
+                        hideBusy()
+                        showFailure(message)
+                    }
+                    return@Thread
+                }
+
                 val saved = TaskStore.save(
-                    this, result.restored, result.coverage, result.elapsedMs, files.size
+                    this, result.restored, result.coverage, result.elapsedMs, files.size, result.diag
                 )
                 runOnUiThread {
                     hideBusy()
@@ -431,6 +465,13 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun qualityMessage(issues: List<String>): String = when {
+        "content_changed" in issues -> getString(R.string.fail_quality_content)
+        "align_failed" in issues -> getString(R.string.fail_quality_align)
+        "blind_high" in issues -> getString(R.string.fail_quality_blind)
+        else -> getString(R.string.fail_quality_coverage)
+    }
+
     private fun showFailure(message: String) {
         hideBusy()
         failMessage.text = message
@@ -478,7 +519,7 @@ class MainActivity : AppCompatActivity() {
                 for (sample in samples) {
                     val result = pipeline.run(sample)
                     if (TaskStore.save(
-                            this, result.restored, result.coverage, result.elapsedMs, 2
+                            this, result.restored, result.coverage, result.elapsedMs, 2, result.diag
                         ) != null
                     ) {
                         count++

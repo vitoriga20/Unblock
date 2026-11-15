@@ -20,16 +20,35 @@ data class AlignConfig(
     val ratioTest: Double = 0.75,
     val ransacThresh: Double = 6.0,
     val minInliers: Int = 30,
+    val minInlierCoverage: Double = 0.2,
     val featureMaxSide: Int = 1024,
     val residualRefine: Boolean = true,
     val residualGrid: Int = 6,
     val residualMaxPx: Double = 24.0,
     val residualSmooth: Int = 3,
     val residualMaxSide: Int = 1280,
-    val residualMinMatches: Int = 40
+    val residualMinMatches: Int = 40,
+    val guardMaxShiftRatio: Double = 0.6,
+    val eccEnable: Boolean = true,
+    val eccMaxSide: Int = 960,
+    val eccIterations: Int = 60,
+    val eccEps: Double = 1.0E-5,
+    val eccMinCc: Double = 0.2,
+    val phaseEnable: Boolean = true,
+    val phaseMinResponse: Double = 0.05,
+    val alignMaxResidualMedian: Double = 25.0
 )
 
 data class ResidualInfo(val applied: Boolean, val matches: Int, val maxShift: Double)
+
+/** 对齐结果：模式、内点数、内点空间覆盖率、重叠区光度残差。 */
+data class AlignmentResult(
+    val h: Mat?,
+    val mode: String,
+    val inliers: Int,
+    val coverage: Double,
+    val residual: Double
+)
 
 /** 平面单应、透视变换与正视校正。 */
 object Geometry {
@@ -59,27 +78,149 @@ object Geometry {
             toMatOfPoint2f(orderQuad(baseQuad.toList())))
     }
 
-    /**
-     * 用 SIFT 特征做 aux -> base 的单应估计。
-     * 四角只是屏幕的近似外接框（可能落在画面外），真正决定对齐的是特征匹配；
-     * 特征不足或结果不合理时退回四角单应。
-     */
-    fun homographyFromFeatures(
-        base: Mat,
-        aux: Mat,
-        baseQuad: Array<Point>,
-        auxQuad: Array<Point>,
-        cfg: AlignConfig = AlignConfig()
-    ): Mat {
-        val quadH = homographyFromQuad(auxQuad, baseQuad)
-        val diag = Math.hypot(base.cols().toDouble(), base.rows().toDouble())
-        try {
-            val baseGray = MatTools.toGray(base)
-            val auxGray = MatTools.toGray(aux)
-            // 特征检测在缩小图上做，速度可控，再把单应还原到原分辨率
-            val (bs, s) = MatTools.resizeTo(baseGray, cfg.featureMaxSide)
-            val (as_, _) = MatTools.resizeTo(auxGray, cfg.featureMaxSide)
+    private fun normalizeH(h: Mat?): Mat? {
+        if (h == null || h.empty() || h.rows() != 3 || h.cols() != 3) return null
+        val z = h.get(2, 2)[0]
+        if (Math.abs(z) < 1e-12) return null
+        val out = h.clone()
+        Core.divide(out, Scalar(z), out)
+        return out
+    }
 
+    private fun diagMat(x: Double, y: Double = x): Mat {
+        val m = Mat.eye(3, 3, CvType.CV_64F)
+        m.put(0, 0, x)
+        m.put(1, 1, y)
+        return m
+    }
+
+    private fun mul(a: Mat, b: Mat): Mat {
+        val out = Mat()
+        Core.gemm(a, b, 1.0, Mat(), 0.0, out)
+        return out
+    }
+
+    /** 把全分辨率单应换算到缩放图坐标系；s 为 小图/原图。 */
+    private fun scaledH(h: Mat, sBase: Double, sAux: Double): Mat =
+        mul(mul(diagMat(sBase), h), diagMat(1.0 / sAux))
+
+    private fun quadArea(q: Array<Point>): Double {
+        var sum = 0.0
+        for (i in 0 until 4) {
+            val a = q[i]
+            val b = q[(i + 1) % 4]
+            sum += a.x * b.y - b.x * a.y
+        }
+        return Math.abs(sum) / 2.0
+    }
+
+    /** 只检查单应本身是否退化，不再拿四角当语义参考。 */
+    private fun geometricOk(h: Mat, auxW: Int, auxH: Int, baseW: Int, baseH: Int): Boolean {
+        val src = MatOfPoint2f(
+            Point(0.0, 0.0), Point(auxW.toDouble(), 0.0),
+            Point(auxW.toDouble(), auxH.toDouble()), Point(0.0, auxH.toDouble())
+        )
+        val dst = MatOfPoint2f()
+        try {
+            Core.perspectiveTransform(src, dst, h)
+        } catch (t: Throwable) {
+            return false
+        }
+        val p = dst.toArray()
+        if (p.size != 4 || p.any { !it.x.isFinite() || !it.y.isFinite() }) return false
+
+        val signs = DoubleArray(4) { i ->
+            val o = p[i]
+            val a = p[(i + 1) % 4]
+            val b = p[(i + 2) % 4]
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+        }
+        if (!(signs.all { it > 0 } || signs.all { it < 0 })) return false
+
+        val area = quadArea(p)
+        val baseArea = baseW.toDouble() * baseH
+        if (area < 0.03 * baseArea || area > 12.0 * baseArea) return false
+
+        val denom = h.get(2, 0)[0] * auxW + h.get(2, 1)[0] * auxH + h.get(2, 2)[0]
+        if (Math.abs(denom) < 1e-9) return false
+        val perspective = Math.abs(h.get(2, 0)[0] * auxW / denom) + Math.abs(h.get(2, 1)[0] * auxH / denom)
+        if (perspective > 0.9) return false
+
+        val mx = 0.25 * baseW
+        val my = 0.25 * baseH
+        return p.any {
+            it.x > -mx && it.x < baseW + mx && it.y > -my && it.y < baseH + my
+        }
+    }
+
+    /** 重叠区稳健光度残差：先拟合一阶亮度映射，再取绝对残差中位数。 */
+    private fun photometricResidual(base: Mat, aux: Mat, h: Mat, maxSide: Int = 960): Double {
+        return try {
+            val (bSmall, sB) = MatTools.resizeTo(base, maxSide)
+            val (aSmall, sA) = MatTools.resizeTo(aux, maxSide)
+            val hs = scaledH(h, sB, sA)
+            val warped = Mat()
+            Imgproc.warpPerspective(aSmall, warped, hs, bSmall.size(), Imgproc.INTER_LINEAR,
+                Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0))
+            val valid = Mat.zeros(aSmall.rows(), aSmall.cols(), CvType.CV_8UC1)
+            valid.setTo(Scalar(255.0))
+            val validW = Mat()
+            Imgproc.warpPerspective(valid, validW, hs, bSmall.size(), Imgproc.INTER_NEAREST,
+                Core.BORDER_CONSTANT, Scalar(0.0))
+
+            val gb = MatTools.toGray(bSmall)
+            val gw = MatTools.toGray(warped)
+            val n = gb.rows() * gb.cols()
+            val gbB = ByteArray(n)
+            gb.get(0, 0, gbB)
+            val gwB = ByteArray(n)
+            gw.get(0, 0, gwB)
+            val vB = ByteArray(n)
+            validW.get(0, 0, vB)
+
+            val step = maxOf(1, n / 20000)
+            val xs = DoubleArray(n / step + 2)
+            val ys = DoubleArray(n / step + 2)
+            var count = 0
+            var sx = 0.0
+            var sy = 0.0
+            var sxx = 0.0
+            var sxy = 0.0
+            var i = 0
+            while (i < n) {
+                if ((vB[i].toInt() and 0xFF) > 128) {
+                    val yv = (gbB[i].toInt() and 0xFF).toDouble()
+                    val xv = (gwB[i].toInt() and 0xFF).toDouble()
+                    if (yv > 8.0 && xv > 8.0) {
+                        xs[count] = xv
+                        ys[count] = yv
+                        count++
+                        sx += xv
+                        sy += yv
+                        sxx += xv * xv
+                        sxy += xv * yv
+                    }
+                }
+                i += step
+            }
+            if (count < 800) return 255.0
+            val den = count * sxx - sx * sx
+            val k = if (Math.abs(den) < 1e-9) 1.0 else (count * sxy - sx * sy) / den
+            val b = (sy - k * sx) / count
+            val res = DoubleArray(count) { Math.abs(ys[it] - (k * xs[it] + b)) }
+            res.sort()
+            res[count / 2]
+        } catch (t: Throwable) {
+            255.0
+        }
+    }
+
+    private class SiftOut(val h: Mat?, val inliers: Int, val coverage: Double)
+
+    private fun siftHomography(base: Mat, aux: Mat, cfg: AlignConfig): SiftOut {
+        return try {
+            val (bs, sB) = MatTools.resizeTo(MatTools.toGray(base), cfg.featureMaxSide)
+            val (as_, sA) = MatTools.resizeTo(MatTools.toGray(aux), cfg.featureMaxSide)
             val sift = SIFT.create(cfg.siftNfeatures)
             val kb = MatOfKeyPoint()
             val db = Mat()
@@ -87,12 +228,10 @@ object Geometry {
             val da = Mat()
             sift.detectAndCompute(bs, Mat(), kb, db)
             sift.detectAndCompute(as_, Mat(), ka, da)
-            if (db.empty() || da.empty()) return quadH
+            if (db.empty() || da.empty()) return SiftOut(null, 0, 0.0)
 
-            val matcher = BFMatcher(Core.NORM_L2)
             val knn = ArrayList<MatOfDMatch>()
-            matcher.knnMatch(da, db, knn, 2)
-
+            BFMatcher(Core.NORM_L2).knnMatch(da, db, knn, 2)
             val kaArr = ka.toArray()
             val kbArr = kb.toArray()
             val src = ArrayList<Point>()
@@ -105,44 +244,134 @@ object Geometry {
                     dst.add(kbArr[arr[0].trainIdx].pt)
                 }
             }
-            if (src.size < 12) return quadH
+            if (src.size < 12) return SiftOut(null, src.size, 0.0)
 
             val inlierMask = Mat()
             val hSmall = Calib3d.findHomography(
-                MatOfPoint2f(*src.toTypedArray()),
-                MatOfPoint2f(*dst.toTypedArray()),
+                MatOfPoint2f(*src.toTypedArray()), MatOfPoint2f(*dst.toTypedArray()),
                 Calib3d.RANSAC, cfg.ransacThresh, inlierMask
             )
-            if (hSmall.empty() || hSmall.cols() != 3) return quadH
+            if (hSmall.empty() || hSmall.cols() != 3) return SiftOut(null, 0, 0.0)
             val inliers = Core.countNonZero(inlierMask)
-            if (inliers < cfg.minInliers) return quadH
+            if (inliers < cfg.minInliers) return SiftOut(null, inliers, 0.0)
 
-            // 小图单应 -> 原图单应：H_full = S^-1 * H_small * S
-            val toSmall = Mat.eye(3, 3, CvType.CV_64F)
-            toSmall.put(0, 0, s)
-            toSmall.put(1, 1, s)
-            val toFull = Mat()
-            Core.invert(toSmall, toFull)
-            val tmp = Mat()
-            Core.gemm(hSmall, toSmall, 1.0, Mat(), 0.0, tmp)
-            val hFull = Mat()
-            Core.gemm(toFull, tmp, 1.0, Mat(), 0.0, hFull)
-            if (Math.abs(hFull.get(2, 2)[0]) < 1e-9) return quadH
-            Core.divide(hFull, Scalar(hFull.get(2, 2)[0]), hFull)
+            // 小图 -> 原图：H_full = S_base^-1 * H_small * S_aux
+            val hFull = normalizeH(mul(mul(diagMat(1.0 / sB), hSmall), diagMat(sA)))
+                ?: return SiftOut(null, inliers, 0.0)
 
-            // 合理性校验：把 aux 四角映射过去，落到 base 四角附近才接受
-            val mapped = MatOfPoint2f()
-            Core.perspectiveTransform(toMatOfPoint2f(orderQuad(auxQuad.toList())), mapped, hFull)
-            val bq = orderQuad(baseQuad.toList())
-            val mq = orderQuad(mapped.toArray().toList())
-            var worst = 0.0
-            for (i in 0 until 4) worst = maxOf(worst, Math.hypot(mq[i].x - bq[i].x, mq[i].y - bq[i].y))
-            if (worst > 0.25 * diag) return quadH
-
-            return hFull
+            val mArr = ByteArray(src.size)
+            inlierMask.reshape(1, src.size).get(0, 0, mArr)
+            val inlierDst = ArrayList<Point>()
+            for (i in mArr.indices) {
+                if ((mArr[i].toInt() and 0xFF) > 0) inlierDst.add(dst[i])
+            }
+            val coverage = inlierCoverage(inlierDst, base.cols(), base.rows())
+            SiftOut(hFull, inliers, coverage)
         } catch (t: Throwable) {
-            return quadH
+            SiftOut(null, 0, 0.0)
         }
+    }
+
+    private fun inlierCoverage(pts: List<Point>, w: Int, h: Int, grid: Int = 3, minPerCell: Int = 3): Double {
+        if (pts.isEmpty()) return 0.0
+        val counts = HashMap<Int, Int>()
+        for (p in pts) {
+            val gx = (p.x / maxOf(1, w) * grid).toInt().coerceIn(0, grid - 1)
+            val gy = (p.y / maxOf(1, h) * grid).toInt().coerceIn(0, grid - 1)
+            val key = gy * grid + gx
+            counts[key] = (counts[key] ?: 0) + 1
+        }
+        return counts.values.count { it >= minPerCell }.toDouble() / (grid * grid)
+    }
+
+    private fun phaseHomography(base: Mat, aux: Mat, cfg: AlignConfig): Mat? {
+        if (!cfg.phaseEnable) return null
+        return try {
+            val (bSmall, sB) = MatTools.resizeTo(base, cfg.eccMaxSide)
+            val (aSmall, sA) = MatTools.resizeTo(aux, cfg.eccMaxSide)
+            val ww = bSmall.cols()
+            val hh = bSmall.rows()
+            val sx = ww / aSmall.cols().toDouble()
+            val sy = hh / aSmall.rows().toDouble()
+            val a2 = Mat()
+            Imgproc.resize(aSmall, a2, Size(ww.toDouble(), hh.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+
+            val gb = Mat()
+            val ga = Mat()
+            MatTools.toGray(bSmall).convertTo(gb, CvType.CV_32F, 1.0 / 255.0)
+            MatTools.toGray(a2).convertTo(ga, CvType.CV_32F, 1.0 / 255.0)
+            val win = Mat()
+            Imgproc.createHanningWindow(win, Size(ww.toDouble(), hh.toDouble()), CvType.CV_32F)
+            val response = DoubleArray(1)
+            val shift = Imgproc.phaseCorrelate(ga, gb, win, response)
+            if (response[0] < cfg.phaseMinResponse) return null
+
+            fun build(ox: Double, oy: Double): Mat {
+                val m = Mat.eye(3, 3, CvType.CV_64F)
+                m.put(0, 2, ox)
+                m.put(1, 2, oy)
+                return mul(mul(mul(diagMat(1.0 / sB), m), diagMat(sx, sy)), diagMat(sA))
+            }
+
+            var best: Mat? = null
+            var bestRes = 255.0
+            for (pair in listOf(shift.x to shift.y, -shift.x to -shift.y)) {
+                val hc = normalizeH(build(pair.first, pair.second)) ?: continue
+                if (!geometricOk(hc, aux.cols(), aux.rows(), base.cols(), base.rows())) continue
+                val res = photometricResidual(base, aux, hc)
+                if (res < bestRes) {
+                    bestRes = res
+                    best = hc
+                }
+            }
+            best
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * SIFT -> ECC -> 相位相关 -> 四角单应。
+     * 四角只作为最后一级兜底，不再充当"正确性裁判"。
+     */
+    fun estimateAlignment(base: Mat, aux: Mat, cfg: AlignConfig = AlignConfig(),
+                          auxQuad: Array<Point>? = null, baseQuad: Array<Point>? = null): AlignmentResult {
+        val limit = cfg.alignMaxResidualMedian
+        val sift = siftHomography(base, aux, cfg)
+        if (sift.h != null && geometricOk(sift.h, aux.cols(), aux.rows(), base.cols(), base.rows())) {
+            val res = photometricResidual(base, aux, sift.h)
+            if (res <= limit) return AlignmentResult(sift.h, "sift", sift.inliers, sift.coverage, res)
+        }
+
+        val phase = phaseHomography(base, aux, cfg)
+        if (phase != null && geometricOk(phase, aux.cols(), aux.rows(), base.cols(), base.rows())) {
+            val res = photometricResidual(base, aux, phase)
+            if (res <= limit) return AlignmentResult(phase, "phase", 0, 0.0, res)
+        }
+
+        if (auxQuad != null && baseQuad != null) {
+            val hq = normalizeH(homographyFromQuad(auxQuad, baseQuad))
+            if (hq != null && geometricOk(hq, aux.cols(), aux.rows(), base.cols(), base.rows())) {
+                val res = photometricResidual(base, aux, hq)
+                return AlignmentResult(hq, "quad", 0, 0.0, res)
+            }
+        }
+        return AlignmentResult(null, "failed", sift.inliers, sift.coverage, 255.0)
+    }
+
+    /**
+     * 兼容旧调用：返回单应，失败时返回空 Mat。
+     * 四角只在特征/ECC/相位都失败时作为兜底。
+     */
+    fun homographyFromFeatures(
+        base: Mat,
+        aux: Mat,
+        baseQuad: Array<Point>,
+        auxQuad: Array<Point>,
+        cfg: AlignConfig = AlignConfig()
+    ): Mat {
+        val r = estimateAlignment(base, aux, cfg, auxQuad, baseQuad)
+        return r.h ?: Mat()
     }
 
     /** 把 aux 变换到 base 坐标系，同时返回有效区域掩码。 */

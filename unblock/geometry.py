@@ -95,9 +95,15 @@ def _edge_support(grad: np.ndarray, p0: np.ndarray, p1: np.ndarray, samples: int
 
 
 def detect_screen_quad(img: np.ndarray, screen_cfg: Dict,
-                       debug_path: Optional[str] = None) -> Tuple[np.ndarray, float, np.ndarray]:
-    """用线段直线交点法找屏幕四边形，返回 (原图坐标四角, 置信分, 可视化小图)。"""
+                       debug_path: Optional[str] = None,
+                       mode: str = "dark") -> Tuple[np.ndarray, float, np.ndarray]:
+    """用线段直线交点法找平面四边形。
+
+    mode="dark" 对应黑板/投影幕，"bright" 对应白板/纸张；两者共用交点逻辑，
+    只替换平面内部的亮度先验，这样纸张场景不会再被"暗色大矩形"的假设挡住。
+    """
     max_side = int(screen_cfg["detect_max_side"])
+    mc = screen_cfg if mode == "dark" else dict(screen_cfg.get("bright", {}))
     small, scale = resize_to(img, max_side)
     h, w = small.shape[:2]
     gray = to_gray(small)
@@ -154,19 +160,25 @@ def detect_screen_quad(img: np.ndarray, screen_cfg: Dict,
                     quad = order_quad(np.asarray(pts, dtype=np.float32))
                     xl, xr = quad[0, 0], quad[1, 0]
                     yt, yb = quad[0, 1], quad[3, 1]
-                    if xr - xl < float(screen_cfg["min_width_ratio"]) * w:
+                    if xr - xl < float(mc.get("min_width_ratio", screen_cfg["min_width_ratio"])) * w:
                         continue
-                    if yb - yt < float(screen_cfg["min_height_ratio"]) * h:
+                    if yb - yt < float(mc.get("min_height_ratio", screen_cfg["min_height_ratio"])) * h:
                         continue
-                    if bool(screen_cfg["require_center_inside"]) and \
+                    require_center = bool(mc.get("require_center_inside",
+                                                 screen_cfg.get("require_center_inside", True)))
+                    if require_center and \
                             cv2.pointPolygonTest(quad.reshape(-1, 1, 2), (w / 2.0, h / 2.0), False) < 0:
                         continue
 
                     area_ratio = ((xr - xl) * (yb - yt)) / float(w * h)
-                    if not (float(screen_cfg["min_area_ratio"]) <= area_ratio <= float(screen_cfg["max_area_ratio"])):
+                    min_area = float(mc.get("min_area_ratio", screen_cfg["min_area_ratio"]))
+                    max_area = float(mc.get("max_area_ratio", screen_cfg["max_area_ratio"]))
+                    if not (min_area <= area_ratio <= max_area):
                         continue
                     aspect = (xr - xl) / max(1e-6, (yb - yt))
-                    if not (float(screen_cfg["aspect_min"]) <= aspect <= float(screen_cfg["aspect_max"])):
+                    aspect_min = float(mc.get("aspect_min", screen_cfg["aspect_min"]))
+                    aspect_max = float(mc.get("aspect_max", screen_cfg["aspect_max"]))
+                    if not (aspect_min <= aspect <= aspect_max):
                         continue
 
                     inner = np.zeros((h, w), np.uint8)
@@ -174,36 +186,55 @@ def detect_screen_quad(img: np.ndarray, screen_cfg: Dict,
                     if inner.sum() == 0:
                         continue
                     inner_gray = gray[inner > 0]
-                    dark_ratio = float((inner_gray < dark_thresh).mean())
-                    if dark_ratio < float(screen_cfg["min_dark_ratio"]):
-                        continue
-                    if screen_cfg.get("max_median_luma") is not None:
-                        if float(np.median(inner_gray)) > float(screen_cfg["max_median_luma"]):
-                            continue
-                    bright_ratio = float((inner_gray > 170).mean())
-                    if not (float(screen_cfg["min_bright_ratio"]) <= bright_ratio <= float(screen_cfg["max_bright_ratio"])):
-                        continue
-
                     support = float(np.mean([
                         _edge_support(grad, quad[0], quad[1]),
                         _edge_support(grad, quad[1], quad[2]),
                         _edge_support(grad, quad[2], quad[3]),
                         _edge_support(grad, quad[3], quad[0]),
                     ]))
+
+                    if mode == "dark":
+                        metric = float((inner_gray < dark_thresh).mean())
+                        if metric < float(screen_cfg["min_dark_ratio"]):
+                            continue
+                        if screen_cfg.get("max_median_luma") is not None:
+                            if float(np.median(inner_gray)) > float(screen_cfg["max_median_luma"]):
+                                continue
+                        bright_ratio = float((inner_gray > 170).mean())
+                        if not (float(screen_cfg["min_bright_ratio"]) <= bright_ratio
+                                <= float(screen_cfg["max_bright_ratio"])):
+                            continue
+                    else:
+                        metric = float((inner_gray > 170).mean())
+                        inner_med = float(np.median(inner_gray))
+                        if inner_med < float(mc.get("median_luma_min", 150)):
+                            continue
+                        if inner_med > float(mc.get("median_luma_max", 252)):
+                            continue
+                        if metric < float(mc.get("min_bright_ratio", 0.45)):
+                            continue
+                        # 平面要比周围亮，避免把整面白墙/天花板当成纸
+                        outer = cv2.dilate(inner, np.ones((9, 9), np.uint8))
+                        ring = (outer > 0) & (inner == 0)
+                        if int(ring.sum()) >= 100:
+                            outer_med = float(np.median(gray[ring]))
+                            if inner_med - outer_med < float(mc.get("min_contrast", 8.0)):
+                                continue
+
                     score = area_ratio * (0.15 + support / 255.0)
                     if best is None or score > best[0]:
-                        best = (score, quad, dark_ratio, support)
+                        best = (score, quad, metric, support)
 
     if best is None:
         if debug_path:
             cv2.imwrite(debug_path, all_vis, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
         raise RuntimeError("未找到满足约束的屏幕四边形")
 
-    score, quad, dark_ratio, support = best
+    score, quad, metric, support = best
     full = order_quad(quad / scale)
     vis = all_vis.copy()
     draw_quad(vis, order_quad(quad))
-    cv2.putText(vis, f"score={score:.3f} dark={dark_ratio:.2f} edge={support:.0f}",
+    cv2.putText(vis, f"score={score:.3f} {mode}={metric:.2f} edge={support:.0f}",
                 (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
     return full, float(score), vis
 
@@ -213,9 +244,109 @@ def homography_from_quad(aux_quad: np.ndarray, base_quad: np.ndarray) -> np.ndar
     return cv2.getPerspectiveTransform(order_quad(aux_quad), order_quad(base_quad))
 
 
-def homography_from_features(base: np.ndarray, aux: np.ndarray, align_cfg: Dict,
-                             prev_h: Optional[np.ndarray] = None) -> Tuple[Optional[np.ndarray], int, np.ndarray]:
-    """SIFT + RANSAC 估计 aux -> base 的单应，失败时返回 (None, 0, ...)。"""
+def _normalize_h(h_mat) -> Optional[np.ndarray]:
+    h = np.asarray(h_mat, dtype=np.float64)
+    if h.shape != (3, 3) or abs(float(h[2, 2])) < 1e-12:
+        return None
+    return h / float(h[2, 2])
+
+
+def _quad_area(quad: np.ndarray) -> float:
+    x, y = quad[:, 0], quad[:, 1]
+    return 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+
+def _geometric_ok(h_mat: np.ndarray, aux_shape, base_shape) -> bool:
+    """只检查单应本身是否退化，不再拿四角当语义参考。
+
+    正确的解会把 aux 整幅画面映射成 base 坐标系里的一个凸四边形，
+    它允许落在 base 画面外，但不允许翻折、退化或透视项失控。
+    """
+    h, w = aux_shape[:2]
+    bh, bw = base_shape[:2]
+    corners = np.float32([[0, 0], [w, 0], [w, h], [0, h]]).reshape(-1, 1, 2)
+    mapped = cv2.perspectiveTransform(corners, np.asarray(h_mat, np.float64)).reshape(-1, 2)
+    if not np.isfinite(mapped).all():
+        return False
+
+    def _cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    signs = [_cross(mapped[i], mapped[(i + 1) % 4], mapped[(i + 2) % 4]) for i in range(4)]
+    if not (all(s > 0 for s in signs) or all(s < 0 for s in signs)):
+        return False
+
+    area = _quad_area(mapped)
+    base_area = float(bw * bh)
+    if area < 0.03 * base_area or area > 12.0 * base_area:
+        return False
+
+    denom = float(h_mat[2, 0]) * w + float(h_mat[2, 1]) * h + float(h_mat[2, 2])
+    if abs(denom) < 1e-9:
+        return False
+    perspective = abs(float(h_mat[2, 0]) * w / denom) + abs(float(h_mat[2, 1]) * h / denom)
+    if perspective > 0.9:
+        return False
+
+    # 至少要有一块落进 base 画面，避免选到完全不重叠的解
+    margin_x, margin_y = 0.25 * bw, 0.25 * bh
+    if not np.any((mapped[:, 0] > -margin_x) & (mapped[:, 0] < bw + margin_x) &
+                  (mapped[:, 1] > -margin_y) & (mapped[:, 1] < bh + margin_y)):
+        return False
+    return True
+
+
+def _scaled_h(h_mat: np.ndarray, s_base: float, s_aux: float) -> np.ndarray:
+    """把全分辨率单应换算到缩放图坐标系。s 为 小图/原图。"""
+    sb = np.diag([s_base, s_base, 1.0])
+    sa_inv = np.diag([1.0 / s_aux, 1.0 / s_aux, 1.0])
+    return sb @ np.asarray(h_mat, np.float64) @ sa_inv
+
+
+def _photometric_residual(base: np.ndarray, aux: np.ndarray, h_mat: np.ndarray,
+                         max_side: int = 960) -> float:
+    """重叠区的稳健光度残差：先拟合一阶亮度映射，再取绝对残差中位数。"""
+    b_small, s_b = resize_to(base, max_side)
+    a_small, s_a = resize_to(aux, max_side)
+    hh, ww = b_small.shape[:2]
+    hs = _scaled_h(h_mat, s_b, s_a)
+    warped = cv2.warpPerspective(a_small, hs, (ww, hh), flags=cv2.INTER_LINEAR)
+    valid_small = cv2.warpPerspective(np.full(a_small.shape[:2], 255, np.uint8), hs, (ww, hh),
+                                      flags=cv2.INTER_NEAREST) > 128
+
+    gb = to_gray(b_small).astype(np.float32)
+    gw = to_gray(warped).astype(np.float32)
+    keep = valid_small & (gb > 8) & (gw > 8)
+    n = int(np.count_nonzero(keep))
+    if n < 800:
+        return 255.0
+    idx = np.flatnonzero(keep.reshape(-1))
+    if n > 20000:
+        idx = np.random.default_rng(7).choice(idx, 20000, replace=False)
+    x = gw.reshape(-1)[idx].astype(np.float64)
+    y = gb.reshape(-1)[idx].astype(np.float64)
+    try:
+        k, b = np.polyfit(x, y, 1)
+    except Exception:
+        return 255.0
+    res = np.abs(y - (k * x + b))
+    return float(np.median(res))
+
+
+def _inlier_coverage(pts: np.ndarray, width: int, height: int,
+                     grid: int = 3, min_per_cell: int = 3) -> float:
+    if len(pts) == 0:
+        return 0.0
+    gx = np.clip((pts[:, 0] / max(1, width) * grid).astype(int), 0, grid - 1)
+    gy = np.clip((pts[:, 1] / max(1, height) * grid).astype(int), 0, grid - 1)
+    counts = {}
+    for x, y in zip(gx.tolist(), gy.tolist()):
+        counts[(y, x)] = counts.get((y, x), 0) + 1
+    filled = sum(1 for v in counts.values() if v >= min_per_cell)
+    return filled / float(grid * grid)
+
+
+def _sift_homography(base: np.ndarray, aux: np.ndarray, align_cfg: Dict):
     max_side = int(align_cfg.get("match_max_side", 2000))
     b_small, b_scale = resize_to(base, max_side)
     a_small, a_scale = resize_to(aux, max_side)
@@ -225,37 +356,171 @@ def homography_from_features(base: np.ndarray, aux: np.ndarray, align_cfg: Dict,
     kp_b, des_b = sift.detectAndCompute(gb, None)
     kp_a, des_a = sift.detectAndCompute(ga, None)
     if des_b is None or des_a is None or len(kp_b) < 30 or len(kp_a) < 30:
-        return None, 0, b_small
+        return None, 0, 0.0
 
     matcher = cv2.BFMatcher(cv2.NORM_L2)
     knn = matcher.knnMatch(des_a, des_b, k=2)
     ratio = float(align_cfg["ratio_test"])
     good = [m for m, n in knn if m.distance < ratio * n.distance]
     if len(good) < 12:
-        return None, 0, b_small
+        return None, 0, 0.0
 
     src = np.float32([kp_a[m.queryIdx].pt for m in good]) / a_scale
     dst = np.float32([kp_b[m.trainIdx].pt for m in good]) / b_scale
     h_mat, inliers = cv2.findHomography(src, dst, cv2.RANSAC, float(align_cfg["ransac_thresh"]))
     if h_mat is None or inliers is None:
-        return None, 0, b_small
+        return None, 0, 0.0
 
     inlier_count = int(inliers.sum())
-    if inlier_count < 12:
-        return None, inlier_count, b_small
-    if prev_h is not None and not _is_plausible(h_mat, prev_h, aux.shape):
-        return None, inlier_count, b_small
-    return h_mat, inlier_count, b_small
+    if inlier_count < int(align_cfg.get("min_inliers", 12)):
+        return None, inlier_count, 0.0
+    h_norm = _normalize_h(h_mat)
+    if h_norm is None:
+        return None, inlier_count, 0.0
+    sel = inliers.reshape(-1) > 0
+    coverage = _inlier_coverage(dst[sel], base.shape[1], base.shape[0])
+    return h_norm, inlier_count, coverage
 
 
-def _is_plausible(h_mat: np.ndarray, ref_h: np.ndarray, aux_shape) -> bool:
-    """检查新单应是否与四角粗对齐量级一致，防止 SIFT 在重复文字上跑飞。"""
-    h, w = aux_shape[:2]
-    probe = np.float32([[0, 0], [w, 0], [w, h], [0, h], [w / 2, h / 2]]).reshape(-1, 1, 2)
-    p_new = cv2.perspectiveTransform(probe, h_mat).reshape(-1, 2)
-    p_ref = cv2.perspectiveTransform(probe, ref_h).reshape(-1, 2)
-    shift = float(np.max(np.linalg.norm(p_new - p_ref, axis=1)))
-    return shift < float(max(h, w)) * 0.25
+def _ecc_homography(base: np.ndarray, aux: np.ndarray, align_cfg: Dict):
+    if not bool(align_cfg.get("ecc_enable", True)):
+        return None, {}
+    max_side = int(align_cfg.get("ecc_max_side", 960))
+    b_small, s_b = resize_to(base, max_side)
+    a_small, s_a = resize_to(aux, max_side)
+    hh, ww = b_small.shape[:2]
+    if a_small.shape[1] != ww or a_small.shape[0] != hh:
+        sx = ww / float(a_small.shape[1])
+        sy = hh / float(a_small.shape[0])
+        a_small = cv2.resize(a_small, (ww, hh), interpolation=cv2.INTER_AREA)
+    else:
+        sx, sy = 1.0, 1.0
+
+    gb, ga = to_gray(b_small), to_gray(a_small)
+    warp = np.eye(2, 3, dtype=np.float32)
+    crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+            int(align_cfg.get("ecc_iterations", 60)), float(align_cfg.get("ecc_eps", 1e-5)))
+    try:
+        cc, warp = cv2.findTransformECC(gb, ga, warp, cv2.MOTION_AFFINE, crit, None, 5)
+    except cv2.error:
+        return None, {}
+    if float(cc) < float(align_cfg.get("ecc_min_cc", 0.2)):
+        return None, {"cc": float(cc)}
+
+    w3 = np.vstack([warp.astype(np.float64), [0.0, 0.0, 1.0]])
+    t_a = np.diag([s_a, s_a, 1.0])
+    t_stretch = np.diag([sx, sy, 1.0])
+    t_b_inv = np.diag([1.0 / s_b, 1.0 / s_b, 1.0])
+    return _normalize_h(t_b_inv @ w3 @ t_stretch @ t_a), {"cc": float(cc)}
+
+
+def _phase_homography(base: np.ndarray, aux: np.ndarray, align_cfg: Dict):
+    if not bool(align_cfg.get("phase_enable", True)):
+        return None, {}
+    max_side = int(align_cfg.get("ecc_max_side", 960))
+    b_small, s_b = resize_to(base, max_side)
+    a_small, s_a = resize_to(aux, max_side)
+    hh, ww = b_small.shape[:2]
+    if a_small.shape[1] != ww or a_small.shape[0] != hh:
+        sx = ww / float(a_small.shape[1])
+        sy = hh / float(a_small.shape[0])
+        a_small = cv2.resize(a_small, (ww, hh), interpolation=cv2.INTER_AREA)
+    else:
+        sx, sy = 1.0, 1.0
+
+    gb = to_gray(b_small).astype(np.float32) / 255.0
+    ga = to_gray(a_small).astype(np.float32) / 255.0
+    win = cv2.createHanningWindow((ww, hh), cv2.CV_32F)
+    try:
+        (dx, dy), response = cv2.phaseCorrelate(ga, gb, win)
+    except cv2.error:
+        return None, {}
+    if float(response) < float(align_cfg.get("phase_min_response", 0.05)):
+        return None, {"response": float(response)}
+
+    t_a = np.diag([s_a, s_a, 1.0])
+    t_stretch = np.diag([sx, sy, 1.0])
+    t_b_inv = np.diag([1.0 / s_b, 1.0 / s_b, 1.0])
+
+    def _build(ox: float, oy: float) -> np.ndarray:
+        w3 = np.array([[1.0, 0.0, ox], [0.0, 1.0, oy], [0.0, 0.0, 1.0]], np.float64)
+        return t_b_inv @ w3 @ t_stretch @ t_a
+
+    best_h, best_res = None, 255.0
+    for ox, oy in ((dx, dy), (-dx, -dy)):
+        h_cand = _normalize_h(_build(ox, oy))
+        if h_cand is None or not _geometric_ok(h_cand, aux.shape, base.shape):
+            continue
+        res = _photometric_residual(base, aux, h_cand)
+        if res < best_res:
+            best_h, best_res = h_cand, res
+    if best_h is None:
+        return None, {"response": float(response)}
+    return best_h, {"response": float(response), "residual": best_res}
+
+
+def estimate_alignment(base: np.ndarray, aux: np.ndarray, align_cfg: Dict,
+                       aux_quad: Optional[np.ndarray] = None,
+                       base_quad: Optional[np.ndarray] = None):
+    """按 SIFT -> ECC -> 相位相关 -> 四角单应 的顺序估计 aux -> base。
+
+    与旧实现的区别：四角不再作为"正确性裁判"，只作为最后一级兜底；
+    每一级都用几何合理性与重叠区光度残差独立验收，避免四角标注误差误杀正确解。
+    """
+    limit = float(align_cfg.get("align_max_residual_median", 25.0))
+    info = {"mode": "none", "inliers": 0, "coverage": 0.0, "residual": 255.0}
+
+    h_sift, inliers, coverage = _sift_homography(base, aux, align_cfg)
+    if h_sift is not None and _geometric_ok(h_sift, aux.shape, base.shape):
+        res = _photometric_residual(base, aux, h_sift)
+        if res <= limit:
+            info.update(mode="sift", inliers=inliers, coverage=coverage, residual=res)
+            return h_sift, info
+        info.update(residual=res)
+    else:
+        info.update(inliers=inliers, coverage=coverage)
+
+    h_ecc, ecc_info = _ecc_homography(base, aux, align_cfg)
+    if h_ecc is not None and _geometric_ok(h_ecc, aux.shape, base.shape):
+        res = _photometric_residual(base, aux, h_ecc)
+        if res <= limit:
+            info.update(mode="ecc", residual=res, **ecc_info)
+            return h_ecc, info
+
+    h_phase, phase_info = _phase_homography(base, aux, align_cfg)
+    if h_phase is not None and _geometric_ok(h_phase, aux.shape, base.shape):
+        res = _photometric_residual(base, aux, h_phase)
+        if res <= limit:
+            info.update(mode="phase", residual=res, **phase_info)
+            return h_phase, info
+
+    # 只有两端都有真实平面四角时，四角单应才是语义正确的兜底
+    if aux_quad is not None and base_quad is not None:
+        h_quad = homography_from_quad(aux_quad, base_quad)
+        if _geometric_ok(h_quad, aux.shape, base.shape):
+            res = _photometric_residual(base, aux, h_quad)
+            info.update(mode="quad", residual=res)
+            return h_quad, info
+
+    info["mode"] = "failed"
+    return None, info
+
+
+def homography_from_features(base: np.ndarray, aux: np.ndarray, align_cfg: Dict,
+                             prev_h: Optional[np.ndarray] = None):
+    """兼容旧调用：返回 (单应, 内点数, 小图)。失败时单应返回 None。"""
+    h_mat, info = estimate_alignment(base, aux, align_cfg)
+    if h_mat is None:
+        return None, int(info.get("inliers", 0)), resize_to(base, int(align_cfg.get("match_max_side", 2000)))[0]
+    if prev_h is not None:
+        hh, ww = aux.shape[:2]
+        probe = np.float32([[0, 0], [ww, 0], [ww, hh], [0, hh], [ww / 2, hh / 2]]).reshape(-1, 1, 2)
+        p_new = cv2.perspectiveTransform(probe, h_mat).reshape(-1, 2)
+        p_ref = cv2.perspectiveTransform(probe, np.asarray(prev_h, np.float64)).reshape(-1, 2)
+        shift = float(np.max(np.linalg.norm(p_new - p_ref, axis=1)))
+        if shift > float(max(hh, ww)) * float(align_cfg.get("guard_max_shift_ratio", 0.6)):
+            return None, int(info.get("inliers", 0)), resize_to(base, int(align_cfg.get("match_max_side", 2000)))[0]
+    return h_mat, int(info.get("inliers", 0)), resize_to(base, int(align_cfg.get("match_max_side", 2000)))[0]
 
 
 def warp_to_base(aux: np.ndarray, h_mat: np.ndarray, base_shape) -> Tuple[np.ndarray, np.ndarray]:

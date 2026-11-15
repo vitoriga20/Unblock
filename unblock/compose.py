@@ -35,6 +35,50 @@ def estimate_gain_map(base: np.ndarray, aux: np.ndarray, region: np.ndarray, cfg
     return gm.astype(np.float32)
 
 
+def estimate_gain_map_robust(base: np.ndarray, aux: np.ndarray, region: np.ndarray,
+                             cfg: Dict, grid: int = 8) -> np.ndarray:
+    """分块取中位数的增益场，用于遮挡检测前的粗校正。
+
+    遮挡检测如果直接比较原始两图，投影幕/黑板随视角变化的亮度差会被当成遮挡，
+    整块卡片都会被误判。先做一次对人物不敏感的块中位数校正，帧差才反映真实差异。
+    """
+    b = base.astype(np.float32) + 1.0
+    a = aux.astype(np.float32) + 1.0
+    ratio = b / a
+    h, w = ratio.shape[:2]
+    g = max(2, int(grid))
+    cell = np.ones((g, g, 3), np.float32)
+    counts = np.zeros((g, g), np.int32)
+
+    ys = np.clip((np.arange(h) / float(h) * g).astype(int), 0, g - 1)
+    xs = np.clip((np.arange(w) / float(w) * g).astype(int), 0, g - 1)
+    yy, xx = np.meshgrid(ys, xs, indexing="ij")
+    valid = region > 0
+
+    for gy in range(g):
+        for gx in range(g):
+            sel = valid & (yy == gy) & (xx == gx)
+            n = int(np.count_nonzero(sel))
+            counts[gy, gx] = n
+            if n >= 50:
+                cell[gy, gx] = np.median(ratio[sel].reshape(-1, 3), axis=0)
+
+    filled = counts >= 50
+    fallback = np.median(ratio[valid].reshape(-1, 3), axis=0) if np.any(valid) else np.ones(3, np.float32)
+    if not np.any(filled):
+        cell[:] = fallback
+    else:
+        k = 3
+        num = cv2.blur(np.where(filled[..., None], cell, 0.0), (k, k))
+        den = cv2.blur(filled.astype(np.float32), (k, k))
+        near = num / np.maximum(den, 1e-6)[..., None]
+        cell = np.where(filled[..., None], cell, near)
+
+    field = cv2.resize(cell, (w, h), interpolation=cv2.INTER_CUBIC)
+    field = np.clip(field, float(cfg["gain_clip_min"]), float(cfg["gain_clip_max"]))
+    return field.astype(np.float32)
+
+
 def match_color_lab(aux: np.ndarray, base: np.ndarray, mask: np.ndarray, aux_valid: np.ndarray,
                     screen: np.ndarray, cfg: Dict) -> Tuple[np.ndarray, Dict]:
     """

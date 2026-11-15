@@ -31,7 +31,18 @@
       "residual_max_px": 24,
       "residual_smooth": 3,
       "residual_max_side": 1280,
-      "residual_min_matches": 40
+      "residual_min_matches": 40,
+      "min_inliers": 30,
+      "min_inlier_coverage": 0.2,
+      "guard_max_shift_ratio": 0.6,
+      "ecc_enable": true,
+      "ecc_max_side": 960,
+      "ecc_iterations": 60,
+      "ecc_eps": 0.00001,
+      "ecc_min_cc": 0.2,
+      "phase_enable": true,
+      "phase_min_response": 0.05,
+      "align_max_residual_median": 25.0
     },
     "occlusion": {
       "diff_blur_kernel": 9,
@@ -46,7 +57,19 @@
       "shadow_ratio": 0.94,
       "shadow_delta": 4,
       "shadow_max_px": 600,
-      "shadow_max_ratio": 0.12
+      "shadow_max_ratio": 0.12,
+      "interior_blobs": true,
+      "interior_min_area_ratio": 0.002,
+      "interior_min_solidity": 0.22,
+      "interior_min_thickness_ratio": 0.008,
+      "interior_color_delta": 18.0,
+      "max_diff_fill_ratio": 0.15,
+      "person_grow_kernel": 31,
+      "near_blur_kernel": 3,
+      "near_diff_thresh": 18,
+      "content_check": true,
+      "content_diff_thresh": 45,
+      "content_change_ratio": 0.45
     },
     "compose": {
       "edge_soft_px": 5,
@@ -54,6 +77,7 @@
       "gain_clip_min": 0.75,
       "gain_clip_max": 1.35,
       "gain_smooth": 45,
+      "gain_grid": 8,
       "gain_exclude_px": 12,
       "seam_band_px": 2,
       "color_match_enable": true,
@@ -68,7 +92,60 @@
       "model": "model/yolov8n-seg.onnx",
       "input_size": 640,
       "conf": 0.1,
-      "enabled": true
+      "enabled": true,
+      "classes": [0],
+      "object_classes": [24, 25, 26, 39, 40, 41, 42, 43, 44, 45, 46, 47, 49, 63, 65, 67, 73, 76, 78, 79]
+    },
+    "screen": {
+      "detect_max_side": 1600,
+      "min_dark_ratio": 0.10,
+      "max_median_luma": 125,
+      "min_width_ratio": 0.35,
+      "min_height_ratio": 0.30,
+      "min_area_ratio": 0.12,
+      "max_area_ratio": 0.98,
+      "aspect_min": 1.15,
+      "aspect_max": 2.45,
+      "bright": {
+        "median_luma_min": 150,
+        "median_luma_max": 252,
+        "min_bright_ratio": 0.45,
+        "min_area_ratio": 0.04,
+        "max_area_ratio": 0.95,
+        "min_width_ratio": 0.18,
+        "min_height_ratio": 0.15,
+        "aspect_min": 0.45,
+        "aspect_max": 3.0,
+        "min_rectangularity": 0.55,
+        "contour_epsilon_ratio": 0.02,
+        "min_contrast": 8.0
+      }
+    },
+    "quality": {
+      "min_sharpness": 0.0,
+      "max_occlusion_ratio": 0.55,
+      "min_coverage": 0.45,
+      "max_blind_ratio": 0.45,
+      "max_seam_step": 45.0,
+      "max_align_residual": 18.0,
+      "min_inlier_coverage": 0.2,
+      "max_content_change": 0.45,
+      "retry_alt_base": true
+    },
+    "base_select": {
+      "enable": true,
+      "occlusion_weight": 1.4,
+      "sharpness_weight": 0.8,
+      "perspective_weight": 0.5,
+      "exposure_weight": 0.3
+    },
+    "fusion": {
+      "enable": true,
+      "min_region_px": 400,
+      "ring_px": 41,
+      "max_lab_delta": 26.0,
+      "max_person_overlap": 0.2,
+      "min_valid_coverage": 0.85
     },
     "rectify": {
       "target_long_side": 1920,

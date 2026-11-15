@@ -1,6 +1,7 @@
-"""人物分割：给出画面中被人体占据的像素，用于遮挡判定。
+"""前景遮挡物分割：人体之外，也召回手持物（杯子、书、手机、笔等）。
 
-支持分块推理（tiling），把只露出后脑勺、肩线的小目标放大后再检测，提升召回。
+COCO 没有 hand 类，手通常只能靠人体 mask 覆盖到一部分，剩余的由遮挡检测里的
+"内部较实心色块 + 另一张更接近平面背景"这条证据补齐。
 """
 
 from typing import Dict, Optional
@@ -19,7 +20,9 @@ def _get_model(model_path: str):
 
 
 def _infer(model, patch: np.ndarray, cfg: Dict) -> np.ndarray:
-    res = model(patch, classes=[0], conf=float(cfg["conf"]), imgsz=int(cfg["imgsz"]), verbose=False)[0]
+    classes = cfg.get("classes") or [0]
+    res = model(patch, classes=[int(c) for c in classes], conf=float(cfg["conf"]),
+                imgsz=int(cfg["imgsz"]), verbose=False)[0]
     mask = np.zeros(patch.shape[:2], np.uint8)
     if res.masks is None or len(res.masks) == 0:
         return mask
@@ -30,7 +33,7 @@ def _infer(model, patch: np.ndarray, cfg: Dict) -> np.ndarray:
 
 
 def person_mask(img: np.ndarray, cfg: Dict) -> Optional[np.ndarray]:
-    """返回与 img 同尺寸的 0/255 人物掩码；依赖缺失时返回 None。"""
+    """返回与 img 同尺寸的 0/255 前景遮挡物掩码；依赖缺失时返回 None。"""
     try:
         model = _get_model(str(cfg["model"]))
     except Exception as exc:

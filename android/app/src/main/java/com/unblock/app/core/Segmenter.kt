@@ -39,8 +39,11 @@ class Segmenter(
         inputName = session.inputNames.first()
     }
 
-    /** 返回与原图同尺寸的 0/255 人物掩码。 */
-    fun personMask(img: Mat): Mat {
+    /** 返回与原图同尺寸的 0/255 前景掩码；默认只取 person 类。 */
+    fun personMask(img: Mat): Mat = personMask(img, intArrayOf(0))
+
+    /** 指定类集合：纸面/桌面场景可以把手持物（杯子、书、手机等）一起召回。 */
+    fun personMask(img: Mat, classes: IntArray): Mat {
         val h = img.rows()
         val w = img.cols()
         val scale = min(inputSize.toDouble() / w, inputSize.toDouble() / h)
@@ -91,7 +94,12 @@ class Segmenter(
         val scores = ArrayList<Float>()
         val coeffs = ArrayList<FloatArray>()
         for (i in 0 until numCandidates) {
-            val score = det.get(4 * numCandidates + i) // person 类索引 0 -> 通道 4
+            var score = 0f
+            for (c in classes) {
+                if (c < 0 || c >= numClasses) continue
+                val s = det.get((4 + c) * numCandidates + i)
+                if (s > score) score = s
+            }
             if (score < confThresh) continue
             val cx = det.get(0 * numCandidates + i)
             val cy = det.get(1 * numCandidates + i)

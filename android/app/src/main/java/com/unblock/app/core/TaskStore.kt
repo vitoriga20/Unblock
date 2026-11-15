@@ -40,7 +40,8 @@ object TaskStore {
         bitmap: Bitmap,
         coverage: Double,
         elapsedMs: Long,
-        sources: Int
+        sources: Int,
+        note: String = ""
     ): TaskItem? {
         return try {
             val stamp = System.currentTimeMillis()
@@ -55,6 +56,7 @@ object TaskStore {
                 put("coverage", coverage)
                 put("elapsed", elapsedMs)
                 put("sources", sources)
+                put("note", note)
             }
             File(dir(context), "task_$stamp.json").writeText(meta.toString(), Charsets.UTF_8)
             TaskItem(image, thumb, stamp, bitmap.width, bitmap.height, coverage, elapsedMs, sources)
