@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>遮不住 · 封面母题 v1</title>
+<style>
+:root{
+  --paper:#FFFFFF;
+  --ink:#111114;
+  --ink-2:#6C6C72;
+  --ink-3:#8E8E93;
+  --hair:#E3E3E7;
+  --canvas:#F5F5F7;
+  --wall-light:#EDEDEF;
+  --wall-dark:#0A0A0B;
+  --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:var(--font-sans);font-size:14px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:56px 40px 104px;}
+
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
+  padding-bottom:22px;border-bottom:1px solid var(--ink);}
+header h1{margin:0;font-size:22px;font-weight:600;letter-spacing:.01em;}
+header .kicker{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);letter-spacing:.14em;text-transform:uppercase;}
+header .meta{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);text-align:right;line-height:1.8;}
+
+section{margin-top:60px;}
+.sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px;}
+.sec-no{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);}
+.sec-title{font-size:15px;font-weight:600;}
+.sec-note{font-size:12px;color:var(--ink-2);margin-left:auto;}
+
+.card{border:1px solid var(--hair);border-radius:12px;padding:20px;}
+
+.ico{display:block;width:var(--s,48px);height:var(--s,48px);}
+
+/* 01 主调 */
+.colorways{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.cw-body{display:flex;gap:20px;align-items:flex-start;}
+.cw-sizes{display:flex;align-items:flex-end;gap:16px;}
+.cw-sizes figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.cw-sizes figcaption{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);}
+.cw-name{font-size:13px;font-weight:600;margin-bottom:4px;}
+.cw-desc{font-size:12px;color:var(--ink-2);margin-bottom:16px;}
+.strips{display:flex;flex-direction:column;gap:10px;margin-top:16px;}
+.strip{display:flex;align-items:center;gap:18px;padding:14px 16px;border-radius:10px;}
+.strip.light{background:var(--wall-light);}
+.strip.dark{background:var(--wall-dark);}
+.strip .tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;}
+.strip.light .tag{color:var(--ink-2);}
+.strip.dark .tag{color:#8E8E93;}
+
+/* 02 桌面 */
+.desks{display:grid;grid-template-columns:repeat(3,300px);gap:28px;}
+.phone{width:300px;height:620px;border-radius:44px;position:relative;overflow:hidden;border:1px solid var(--hair);}
+.phone.light{background:var(--wall-light);}
+.phone.dark{background:var(--wall-dark);border-color:#232326;}
+.notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:96px;height:24px;border-radius:12px;background:#000;z-index:3;}
+.phone.dark .notch{background:#1A1A1C;}
+.statusbar{position:absolute;top:14px;left:26px;right:26px;display:flex;justify-content:space-between;
+  font-family:var(--font-mono);font-size:11px;z-index:2;}
+.phone.light .statusbar{color:var(--ink);}
+.phone.dark .statusbar{color:#fff;}
+.home-grid{position:absolute;inset:82px 20px 40px;display:grid;
+  grid-template-columns:repeat(4,1fr);gap:26px 10px;align-content:start;}
+.app{display:flex;flex-direction:column;align-items:center;gap:7px;}
+.app .name{font-size:10.5px;line-height:1.2;letter-spacing:.01em;}
+.phone.light .app .name{color:var(--ink);}
+.phone.dark .app .name{color:#EDEDEF;}
+.ph{width:52px;height:52px;border-radius:13px;}
+.phone.light .ph{background:rgba(0,0,0,.07);}
+.phone.dark .ph{background:rgba(255,255,255,.10);}
+.themed{width:52px;height:52px;border-radius:50%;background:#2C3038;display:flex;align-items:center;justify-content:center;}
+.themed .ico{--s:38px;color:#C9D3E4;}
+.desk-cap{margin-top:12px;font-size:12px;color:var(--ink-2);max-width:300px;}
+
+/* 03 遮罩 */
+.masks{display:flex;gap:32px;flex-wrap:wrap;}
+.mask-item{display:flex;flex-direction:column;align-items:center;gap:10px;}
+.mask{width:96px;height:96px;overflow:hidden;}
+.mask.circle{border-radius:50%;}
+.mask.squircle{border-radius:27%;}
+.mask.rounded{border-radius:18%;}
+.mask .ico{--s:96px;}
+.mask-item span{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);}
+
+/* 04 启动页 */
+.splashes{display:grid;grid-template-columns:300px 300px;gap:28px;}
+.splash{width:300px;height:620px;border-radius:44px;border:1px solid var(--hair);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;overflow:hidden;position:relative;}
+.splash.dark{background:var(--wall-dark);border-color:#232326;}
+.splash.light{background:var(--paper);}
+.splash .ico{--s:96px;}
+.splash .word{font-size:17px;font-weight:600;letter-spacing:.12em;}
+.splash.dark .word{color:#fff;}
+.splash.light .word{color:var(--ink);}
+.splash .sub{font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;}
+.splash.dark .sub{color:#6C6C72;}
+.splash.light .sub{color:var(--ink-3);}
+.splash .picked{position:absolute;top:28px;right:28px;font-family:var(--font-mono);
+  font-size:10px;letter-spacing:.18em;color:#fff;background:var(--ink);padding:4px 8px;border-radius:4px;}
+
+/* 05 横版封面 */
+.cover-real img{display:block;width:100%;height:auto;border-radius:12px;}
+
+/* 06 待定 */
+.todo{display:grid;grid-template-columns:repeat(2,1fr);gap:18px 40px;}
+.todo-item{border-top:1px solid var(--hair);padding-top:14px;}
+.todo-item b{display:block;font-size:13px;font-weight:600;margin-bottom:4px;}
+.todo-item span{font-size:12.5px;color:var(--ink-2);}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="mark-dark" viewBox="0 0 108 108">
+      <rect width="108" height="108" fill="#111114"/>
+      <g fill="#FFFFFF">
+        <circle cx="36" cy="38" r="9.5"/>
+        <path d="M27 78C27 60 31 52 36 52C41 52 45 60 45 78Z"/>
+        <path d="M56 37.5A4.5 4.5 0 0 1 60.5 33H80.5A4.5 4.5 0 0 1 85 37.5A4.5 4.5 0 0 1 80.5 42H60.5A4.5 4.5 0 0 1 56 37.5Z"/>
+        <path d="M56 53.5A4.5 4.5 0 0 1 60.5 49H80.5A4.5 4.5 0 0 1 85 53.5A4.5 4.5 0 0 1 80.5 58H60.5A4.5 4.5 0 0 1 56 53.5Z"/>
+        <path d="M56 69.5A4.5 4.5 0 0 1 60.5 65H71.5A4.5 4.5 0 0 1 76 69.5A4.5 4.5 0 0 1 71.5 74H60.5A4.5 4.5 0 0 1 56 69.5Z"/>
+      </g>
+    </symbol>
+    <symbol id="mark-paper" viewBox="0 0 108 108">
+      <rect width="108" height="108" fill="#FFFFFF"/>
+      <g fill="#111114">
+        <circle cx="36" cy="38" r="9.5"/>
+        <path d="M27 78C27 60 31 52 36 52C41 52 45 60 45 78Z"/>
+        <path d="M56 37.5A4.5 4.5 0 0 1 60.5 33H80.5A4.5 4.5 0 0 1 85 37.5A4.5 4.5 0 0 1 80.5 42H60.5A4.5 4.5 0 0 1 56 37.5Z"/>
+        <path d="M56 53.5A4.5 4.5 0 0 1 60.5 49H80.5A4.5 4.5 0 0 1 85 53.5A4.5 4.5 0 0 1 80.5 58H60.5A4.5 4.5 0 0 1 56 53.5Z"/>
+        <path d="M56 69.5A4.5 4.5 0 0 1 60.5 65H71.5A4.5 4.5 0 0 1 76 69.5A4.5 4.5 0 0 1 71.5 74H60.5A4.5 4.5 0 0 1 56 69.5Z"/>
+      </g>
+    </symbol>
+    <symbol id="mark-mono" viewBox="0 0 108 108">
+      <g fill="currentColor">
+        <circle cx="36" cy="38" r="9.5"/>
+        <path d="M27 78C27 60 31 52 36 52C41 52 45 60 45 78Z"/>
+        <path d="M56 37.5A4.5 4.5 0 0 1 60.5 33H80.5A4.5 4.5 0 0 1 85 37.5A4.5 4.5 0 0 1 80.5 42H60.5A4.5 4.5 0 0 1 56 37.5Z"/>
+        <path d="M56 53.5A4.5 4.5 0 0 1 60.5 49H80.5A4.5 4.5 0 0 1 85 53.5A4.5 4.5 0 0 1 80.5 58H60.5A4.5 4.5 0 0 1 56 53.5Z"/>
+        <path d="M56 69.5A4.5 4.5 0 0 1 60.5 65H71.5A4.5 4.5 0 0 1 76 69.5A4.5 4.5 0 0 1 71.5 74H60.5A4.5 4.5 0 0 1 56 69.5Z"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="kicker">Unblock · App Mark</div>
+      <h1>遮不住 · 封面母题 v1</h1>
+    </div>
+    <div class="meta">
+      2026-11-17<br>
+      尺寸按 1:1 显示，请以 100% 缩放查看
+    </div>
+  </header>
+
+  <!-- 01 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">01</span>
+      <span class="sec-title">主调：黑底 / 白底</span>
+      <span class="sec-note">同一骨架，只换明暗关系</span>
+    </div>
+    <div class="colorways">
+      <div class="card">
+        <div class="cw-name">黑底版</div>
+        <div class="cw-desc">左边一个人，右边三行板书。人和字各占一整块白，靠面积而不是靠笔画，所以缩到 32 还读得出。</div>
+        <div class="cw-body">
+          <svg class="ico" style="--s:96px"><use href="#mark-dark"/></svg>
+          <div class="cw-sizes">
+            <figure><svg class="ico" style="--s:72px"><use href="#mark-dark"/></svg><figcaption>72</figcaption></figure>
+            <figure><svg class="ico" style="--s:48px"><use href="#mark-dark"/></svg><figcaption>48</figcaption></figure>
+            <figure><svg class="ico" style="--s:32px"><use href="#mark-dark"/></svg><figcaption>32</figcaption></figure>
+            <figure><svg class="ico" style="--s:24px"><use href="#mark-dark"/></svg><figcaption>24</figcaption></figure>
+          </div>
+        </div>
+        <div class="strips">
+          <div class="strip light"><span class="tag">浅壁纸</span>
+            <svg class="ico" style="--s:56px"><use href="#mark-dark"/></svg>
+            <svg class="ico" style="--s:48px"><use href="#mark-dark"/></svg>
+          </div>
+          <div class="strip dark"><span class="tag">深壁纸</span>
+            <svg class="ico" style="--s:56px"><use href="#mark-dark"/></svg>
+            <svg class="ico" style="--s:48px"><use href="#mark-dark"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="cw-name">白底版</div>
+        <div class="cw-desc">同一骨架换明暗。浅色壁纸上会丢掉方块边界，只剩人和三行字浮着。</div>
+        <div class="cw-body">
+          <svg class="ico" style="--s:96px"><use href="#mark-paper"/></svg>
+          <div class="cw-sizes">
+            <figure><svg class="ico" style="--s:72px"><use href="#mark-paper"/></svg><figcaption>72</figcaption></figure>
+            <figure><svg class="ico" style="--s:48px"><use href="#mark-paper"/></svg><figcaption>48</figcaption></figure>
+            <figure><svg class="ico" style="--s:32px"><use href="#mark-paper"/></svg><figcaption>32</figcaption></figure>
+            <figure><svg class="ico" style="--s:24px"><use href="#mark-paper"/></svg><figcaption>24</figcaption></figure>
+          </div>
+        </div>
+        <div class="strips">
+          <div class="strip light"><span class="tag">浅壁纸</span>
+            <svg class="ico" style="--s:56px"><use href="#mark-paper"/></svg>
+            <svg class="ico" style="--s:48px"><use href="#mark-paper"/></svg>
+          </div>
+          <div class="strip dark"><span class="tag">深壁纸</span>
+            <svg class="ico" style="--s:56px"><use href="#mark-paper"/></svg>
+            <svg class="ico" style="--s:48px"><use href="#mark-paper"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">02</span>
+      <span class="sec-title">放桌面比</span>
+      <span class="sec-note">含 Android 13 主题图标模拟</span>
+    </div>
+    <div class="desks">
+      <div>
+        <div class="phone light">
+          <div class="notch"></div>
+          <div class="statusbar"><span>9:41</span><span>82%</span></div>
+          <div class="home-grid">
+            <div class="app"><svg class="ico" style="--s:52px"><use href="#mark-dark"/></svg><span class="name">遮不住</span></div>
+            <div class="app"><div class="ph"></div><span class="name">相机</span></div>
+            <div class="app"><div class="ph"></div><span class="name">相册</span></div>
+            <div class="app"><div class="ph"></div><span class="name">设置</span></div>
+            <div class="app"><div class="ph"></div><span class="name">日历</span></div>
+            <div class="app"><div class="ph"></div><span class="name">时钟</span></div>
+            <div class="app"><div class="ph"></div><span class="name">备忘录</span></div>
+            <div class="app"><div class="ph"></div><span class="name">文件</span></div>
+          </div>
+        </div>
+        <div class="desk-cap">浅色壁纸。黑底版边界完整，像一张贴上去的黑板。</div>
+      </div>
+      <div>
+        <div class="phone dark">
+          <div class="notch"></div>
+          <div class="statusbar"><span>9:41</span><span>82%</span></div>
+          <div class="home-grid">
+            <div class="app"><svg class="ico" style="--s:52px"><use href="#mark-dark"/></svg><span class="name">遮不住</span></div>
+            <div class="app"><div class="ph"></div><span class="name">相机</span></div>
+            <div class="app"><div class="ph"></div><span class="name">相册</span></div>
+            <div class="app"><div class="ph"></div><span class="name">设置</span></div>
+            <div class="app"><div class="ph"></div><span class="name">日历</span></div>
+            <div class="app"><div class="ph"></div><span class="name">时钟</span></div>
+            <div class="app"><div class="ph"></div><span class="name">备忘录</span></div>
+            <div class="app"><div class="ph"></div><span class="name">文件</span></div>
+          </div>
+        </div>
+        <div class="desk-cap">深色壁纸。方块边界消失，只剩一个白色人形——这一版反而更干净。</div>
+      </div>
+      <div>
+        <div class="phone dark">
+          <div class="notch"></div>
+          <div class="statusbar"><span>9:41</span><span>82%</span></div>
+          <div class="home-grid">
+            <div class="app"><div class="themed"><svg class="ico"><use href="#mark-mono"/></svg></div><span class="name">遮不住</span></div>
+            <div class="app"><div class="ph"></div><span class="name">相机</span></div>
+            <div class="app"><div class="ph"></div><span class="name">相册</span></div>
+            <div class="app"><div class="ph"></div><span class="name">设置</span></div>
+            <div class="app"><div class="ph"></div><span class="name">日历</span></div>
+            <div class="app"><div class="ph"></div><span class="name">时钟</span></div>
+            <div class="app"><div class="ph"></div><span class="name">备忘录</span></div>
+            <div class="app"><div class="ph"></div><span class="name">文件</span></div>
+          </div>
+        </div>
+        <div class="desk-cap">系统主题图标。单色层被系统整体染色，所以这层只能画形状，不能带底色。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">03</span>
+      <span class="sec-title">系统遮罩</span>
+      <span class="sec-note">自适应图标会被各家桌面裁成不同形状</span>
+    </div>
+    <div class="masks">
+      <div class="mask-item">
+        <div class="mask circle"><svg class="ico"><use href="#mark-dark"/></svg></div>
+        <span>圆形</span>
+      </div>
+      <div class="mask-item">
+        <div class="mask squircle"><svg class="ico"><use href="#mark-dark"/></svg></div>
+        <span>圆角方形</span>
+      </div>
+      <div class="mask-item">
+        <div class="mask rounded"><svg class="ico"><use href="#mark-dark"/></svg></div>
+        <span>小圆角</span>
+      </div>
+      <div class="mask-item">
+        <div class="mask circle"><svg class="ico"><use href="#mark-paper"/></svg></div>
+        <span>白底 · 圆形</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">04</span>
+      <span class="sec-title">启动页</span>
+      <span class="sec-note">Android 12+ 的系统启动页只认「底色 + 图标」</span>
+    </div>
+    <div class="splashes">
+      <div class="splash dark">
+        <svg class="ico"><use href="#mark-dark"/></svg>
+        <div class="word">遮不住</div>
+        <div class="sub">UNBLOCK</div>
+      </div>
+      <div class="splash light">
+        <svg class="ico"><use href="#mark-paper"/></svg>
+        <div class="word">遮不住</div>
+        <div class="sub">UNBLOCK</div>
+        <div class="picked">采用</div>
+      </div>
+    </div>
+    <div class="desk-cap" style="max-width:640px;margin-top:16px;">
+      采用白底：与首屏白色画廊同色，启动到内容没有颜色跳变。
+      注意 Android 12+ 的系统启动页只画图标和底色，<b>字标放不进去</b>——
+      下面这版带字的画面只能用于宣传图，不能当系统启动页。
+    </div>
+  </section>
+
+  <!-- 05 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">05</span>
+      <span class="sec-title">横版封面 1024 × 500</span>
+      <span class="sec-note">商店首图 / 分享卡片用</span>
+    </div>
+    <div class="cover-real">
+      <img src="cover/cover-1024x500.png" alt="遮不住 横版封面：左侧为黑板与人物，右侧为图标、字标与副标">
+    </div>
+    <div class="desk-cap" style="max-width:760px;margin-top:16px;">
+      照片是 AI 生成的（板书前站着一个背对镜头的人），转黑白以贴合产品的纯黑白基调。
+      没有做前后对比：生成的两帧无法保证是同一块板，硬拼就会像两张不相干的照片。
+      真实的前后对比留给商店截图，那才是产品自己的输出。
+    </div>
+  </section>
+
+  <!-- 06 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">06</span>
+      <span class="sec-title">还没定的四件事</span>
+    </div>
+    <div class="todo">
+      <div class="todo-item">
+        <b>图标会不会被读成通讯录</b>
+        <span>「一个人 + 三行字」在 32px 是这轮最清楚的方案，但形态上接近通讯录/清单类图标。得放进真机桌面看，靠名字和周围图标区分。</span>
+      </div>
+      <div class="todo-item">
+        <b>封面素材是生成的</b>
+        <span>板书照片由生图产出，不是真实拍摄。商店素材如果需要标明「示意图」，这条要写进页脚。</span>
+      </div>
+      <div class="todo-item">
+        <b>字标要不要再走一轮</b>
+        <span>现在是等线 Bold 转轮廓、字距收紧、末两字降 8%、底下压一道板书行。真要更独特，得重画「遮」的形。</span>
+      </div>
+      <div class="todo-item">
+        <b>图标母版有两份源</b>
+        <span>design/cover/icon-dark.svg 和 Android 的 vector XML 是同一图形的手工两份，改形必须两边同步，否则桌面和设计稿会慢慢对不上。</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

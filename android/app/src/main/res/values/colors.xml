@@ -12,6 +12,9 @@
     <color name="thumb_bg">#FFF5F5F7</color>
     <color name="destructive">#FFB3261E</color>
 
+    <!-- 图标：自适应图标的背景层。直接跟随 ink，改品牌色时不至于图标和界面脱节 -->
+    <color name="ic_launcher_background">@color/ink</color>
+
     <!-- 看图 / 四角页 -->
     <color name="viewer_bg">#FF0A0A0B</color>
     <color name="on_viewer">#FFFFFFFF</color>

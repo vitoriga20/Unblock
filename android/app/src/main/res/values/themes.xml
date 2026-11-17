@@ -30,4 +30,8 @@
         <item name="colorOnSurfaceVariant">@color/ink_secondary</item>
         <item name="android:textColorPrimary">@color/ink</item>
     </style>
+
+    <!-- 启动页：Android 12 以下没有系统启动页，这里沿用主主题什么都不做；
+         31 及以上在 values-v31 里补白底与图标，两边同名同父，切版本不跳。 -->
+    <style name="Theme.Unblock.Splash" parent="Theme.Unblock" />
 </resources>

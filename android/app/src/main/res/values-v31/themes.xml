@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ 的系统启动页：只认底色 + 图标，塞不进字标。
+         白底和首屏画廊同色，启动到内容没有颜色跳变。 -->
+    <style name="Theme.Unblock.Splash" parent="Theme.Unblock">
+        <item name="android:windowSplashScreenBackground">@color/paper</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+</resources>

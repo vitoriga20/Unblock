@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13 主题图标层：只能有形状、不能有底色，系统会整体染色。由 build_icon.py 生成。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26.5,38a9.5,9.5 0 1,0 19,0a9.5,9.5 0 1,0 -19,0z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M27 78C27 60 31 52 36 52C41 52 45 60 45 78Z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,37.5A4.5,4.5 0 0 1 60.5,33H80.5A4.5,4.5 0 0 1 85,37.5A4.5,4.5 0 0 1 80.5,42H60.5A4.5,4.5 0 0 1 56,37.5Z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,53.5A4.5,4.5 0 0 1 60.5,49H80.5A4.5,4.5 0 0 1 85,53.5A4.5,4.5 0 0 1 80.5,58H60.5A4.5,4.5 0 0 1 56,53.5Z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,69.5A4.5,4.5 0 0 1 60.5,65H71.5A4.5,4.5 0 0 1 76,69.5A4.5,4.5 0 0 1 71.5,74H60.5A4.5,4.5 0 0 1 56,69.5Z" />
+</vector>
