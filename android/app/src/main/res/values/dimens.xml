@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 聚光引导：高亮框比目标外扩一圈才像聚光，贴边会变成选中态 -->
+    <dimen name="guide_pad">8dp</dimen>
+    <dimen name="guide_stroke">1dp</dimen>
+    <dimen name="guide_radius">12dp</dimen>
+    <dimen name="guide_card_gap">14dp</dimen>
+    <dimen name="guide_card_pad">18dp</dimen>
+    <dimen name="guide_card_max_width">300dp</dimen>
+    <dimen name="guide_card_corner">12dp</dimen>
+
+    <!-- 示例页页码点 -->
+    <dimen name="demo_dot">6dp</dimen>
+    <dimen name="demo_dot_gap">8dp</dimen>
+</resources>

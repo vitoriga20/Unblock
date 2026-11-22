@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -26,9 +27,12 @@ import com.unblock.app.core.Pipeline
 import com.unblock.app.core.PipelineProvider
 import com.unblock.app.core.TaskItem
 import com.unblock.app.core.TaskStore
+import com.unblock.app.core.TutorialPrefs
 import com.unblock.app.ui.GalleryAdapter
+import com.unblock.app.ui.GuideOverlayView
 import com.unblock.app.ui.QuadEditorActivity
 import com.unblock.app.ui.ResultActivity
+import com.unblock.app.ui.TutorialActivity
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
 import org.opencv.core.Point
@@ -49,6 +53,9 @@ class MainActivity : AppCompatActivity() {
         private const val PROGRESS_CEILING = 90
         private const val BUSY_THUMB_SIDE = 320
         private const val TAG = "Unblock"
+        // 首页入口由 RecyclerView 异步布局，需要等子项就绪后再取位置
+        private const val HOME_GUIDE_RETRY = 4
+        private const val HOME_GUIDE_RETRY_MS = 120L
     }
 
     private lateinit var adapter: GalleryAdapter
@@ -108,6 +115,9 @@ class MainActivity : AppCompatActivity() {
             discardSession()
             showImportSheet()
         }
+        findViewById<View>(R.id.tutorialLink).setOnClickListener {
+            startActivity(Intent(this, TutorialActivity::class.java))
+        }
         // 开发回归入口：长按标题跑内置样张，正式界面不出现任何按钮
         findViewById<View>(R.id.homeTitle).setOnLongClickListener {
             confirmSamples()
@@ -133,8 +143,37 @@ class MainActivity : AppCompatActivity() {
     private fun refreshTasks() {
         Thread {
             val list = TaskStore.list(this)
-            runOnUiThread { adapter.submit(list) }
+            runOnUiThread {
+                adapter.submit(list)
+                maybeShowHomeGuide()
+            }
         }.start()
+    }
+
+    /** 首次进入首页时，用聚光引导点一下唯一入口。已经引导过则什么都不做。 */
+    private fun maybeShowHomeGuide(attempt: Int = 0) {
+        if (TutorialPrefs.step(this) != 0) return
+        val gallery = findViewById<RecyclerView>(R.id.gallery)
+        gallery.post {
+            if (isFinishing || isDestroyed) return@post
+            val anchor = gallery.findViewHolderForAdapterPosition(0)
+                ?.let { GuideOverlayView.screenRectOf(it.itemView) }
+            if (anchor == null) {
+                if (attempt < HOME_GUIDE_RETRY) {
+                    gallery.postDelayed({ maybeShowHomeGuide(attempt + 1) }, HOME_GUIDE_RETRY_MS)
+                }
+                return@post
+            }
+            GuideOverlayView.attach(
+                this,
+                anchor,
+                getString(R.string.tutorial_home_text),
+                getString(R.string.tutorial_next),
+                onDark = false
+            ) {
+                TutorialPrefs.mark(this, 1)
+            }
+        }
     }
 
     private fun openResult(item: TaskItem) {
@@ -172,14 +211,45 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.action_take_photo),
             getString(R.string.action_pick_album)
         )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.title_import)
-            .setItems(options) { _, which ->
-                if (which == 0) startCamera() else startAlbum()
-            }
+        val builder = AlertDialog.Builder(this)
+        // 相册是系统界面，画不了引导，拍摄要点只能在这里说一次。
+        // 注意不能用 setMessage：它和 setItems 互斥，会把选项列表挤掉。
+        if (TutorialPrefs.pickHintShown(this)) {
+            builder.setTitle(R.string.title_import)
+        } else {
+            builder.setCustomTitle(buildImportTitle())
+        }
+        builder.setItems(options) { _, which ->
+            if (which == 0) startCamera() else startAlbum()
+        }
             .setNegativeButton(R.string.action_cancel, null)
             .show()
+        TutorialPrefs.markPickHint(this)
     }
+
+    /** 标题区叠加一句拍摄提示，保持选项列表完整。 */
+    private fun buildImportTitle(): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(10))
+        }
+        box.addView(TextView(this).apply {
+            setText(R.string.title_import)
+            setTextColor(getColor(R.color.ink))
+            textSize = 20f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+        box.addView(TextView(this).apply {
+            setText(R.string.tutorial_pick_hint)
+            setTextColor(getColor(R.color.ink_secondary))
+            textSize = 13f
+            setPadding(0, dp(10), 0, 0)
+            setLineSpacing(0f, 1.3f)
+        })
+        return box
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun startAlbum() {
         picker.launch(

@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider
 import androidx.core.view.WindowInsetsControllerCompat
 import com.unblock.app.R
 import com.unblock.app.core.GallerySaver
+import com.unblock.app.core.TutorialPrefs
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -28,6 +29,8 @@ class ResultActivity : AppCompatActivity() {
         const val EXTRA_TIME = "time"
         private const val MAX_VIEW_SIDE = 2048
         private const val PROVIDER_SUFFIX = ".fileprovider"
+        // 等图片先落屏，再浮出引导
+        private const val GUIDE_DELAY_MS = 600L
     }
 
     private lateinit var file: File
@@ -58,6 +61,25 @@ class ResultActivity : AppCompatActivity() {
         saveButton.setOnClickListener { save() }
 
         loadImage()
+        maybeShowGuide()
+    }
+
+    /** 第 3 步引导：高亮保存按钮，收尾整条流程。 */
+    private fun maybeShowGuide() {
+        if (TutorialPrefs.step(this) != 2) return
+        saveButton.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val rect = GuideOverlayView.screenRectOf(saveButton) ?: return@postDelayed
+            GuideOverlayView.attach(
+                this,
+                rect,
+                getString(R.string.tutorial_result_text),
+                getString(R.string.tutorial_done),
+                onDark = true
+            ) {
+                TutorialPrefs.mark(this, 3)
+            }
+        }, GUIDE_DELAY_MS)
     }
 
     private fun loadImage() {

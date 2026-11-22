@@ -3,6 +3,7 @@ package com.unblock.app.ui
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.RectF
 import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
@@ -13,6 +14,7 @@ import com.unblock.app.core.ConfigLoader
 import com.unblock.app.core.MatTools
 import com.unblock.app.core.PhotoStore
 import com.unblock.app.core.ScreenDetector
+import com.unblock.app.core.TutorialPrefs
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
 import java.io.File
@@ -30,6 +32,8 @@ class QuadEditorActivity : AppCompatActivity() {
         const val EXTRA_IMAGE_W = "image_w"
         const val EXTRA_IMAGE_H = "image_h"
         private const val TAG = "Unblock"
+        // 先让用户看清照片，再浮出引导，避免一进来就被挡
+        private const val GUIDE_DELAY_MS = 600L
     }
 
     private lateinit var editor: QuadEditorView
@@ -116,8 +120,35 @@ class QuadEditorActivity : AppCompatActivity() {
                     editor.resetQuadToInset()
                     hint.text = getString(R.string.quad_hint_manual)
                 }
+                maybeShowGuide()
             }
         }.start()
+    }
+
+    /** 第 2 步引导：高亮四角手柄，说明这是唯一需要人工调整的地方。 */
+    private fun maybeShowGuide() {
+        if (TutorialPrefs.step(this) != 1) return
+        editor.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val bounds = editor.quadBoundsInView() ?: return@postDelayed
+            val loc = IntArray(2)
+            editor.getLocationOnScreen(loc)
+            val screen = RectF(
+                bounds.left + loc[0],
+                bounds.top + loc[1],
+                bounds.right + loc[0],
+                bounds.bottom + loc[1]
+            )
+            GuideOverlayView.attach(
+                this,
+                screen,
+                getString(R.string.tutorial_quad_text),
+                getString(R.string.tutorial_next),
+                onDark = true
+            ) {
+                TutorialPrefs.mark(this, 2)
+            }
+        }, GUIDE_DELAY_MS)
     }
 
     /** 检测只需要灰度，单独取一份。 */

@@ -26,4 +26,17 @@
     <color name="handle">#FFFFFFFF</color>
     <color name="handle_stroke">#FF1A1A1A</color>
     <color name="handle_fill">#33FFFFFF</color>
+
+    <!-- 聚光引导：压暗遮罩与描边。描边跟随页面明暗，不引入新的品牌色 -->
+    <color name="guide_scrim">#941A1A1A</color>
+    <color name="guide_stroke_on_light">#FF111114</color>
+    <color name="guide_stroke_on_dark">#E6FFFFFF</color>
+    <color name="guide_card_on_light">#FFFFFFFF</color>
+    <color name="guide_card_on_dark">#FF1A1A1C</color>
+    <color name="guide_text_on_light">#FF111114</color>
+    <color name="guide_text_on_dark">#FFFFFFFF</color>
+    <color name="guide_button_on_light">#FF111114</color>
+    <color name="guide_button_on_dark">#FFFFFFFF</color>
+    <color name="guide_button_text_on_light">#FFFFFFFF</color>
+    <color name="guide_button_text_on_dark">#FF111114</color>
 </resources>

@@ -165,6 +165,16 @@
                 android:text="@string/action_swap_photos"
                 android:textColor="@color/ink_tertiary"
                 android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tutorialLink"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:padding="6dp"
+                android:text="@string/tutorial_see_demo"
+                android:textColor="@color/ink_tertiary"
+                android:textSize="13sp" />
         </LinearLayout>
     </FrameLayout>
 </FrameLayout>

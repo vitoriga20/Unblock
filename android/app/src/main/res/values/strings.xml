@@ -57,4 +57,23 @@
     <string name="samples_done">样张跑完 %1$d 组</string>
     <string name="samples_title">运行内置样张</string>
     <string name="samples_message">仅用于回归验证，结果会存入最近任务。</string>
+
+    <!-- 初始教程 -->
+    <string name="tutorial_next">下一步</string>
+    <string name="tutorial_done">知道了</string>
+    <string name="tutorial_home_text">挑 2 张以上同一块黑板，遮挡位置不一样</string>
+    <string name="tutorial_quad_text">贴住黑板边缘，大概就行，不用很准</string>
+    <string name="tutorial_result_text">存到相册，原图不受影响</string>
+    <string name="tutorial_pick_hint">同一块黑板、换个机位再拍一张，才能补上被挡住的部分。</string>
+    <string name="tutorial_see_demo">看示例</string>
+
+    <string name="tutorial_demo_title">示例</string>
+    <string name="tutorial_demo_tag">示例</string>
+    <string name="tutorial_demo_close">关闭</string>
+    <string name="tutorial_demo_step1">这个人挡住了右边的板书</string>
+    <string name="tutorial_demo_step2">换一边再拍一张，挡住的地方就露出来了</string>
+    <string name="tutorial_demo_step3">两张合成，用的都是照片里真实存在的像素</string>
+    <string name="tutorial_demo_limit">两张都挡住的地方补不回来，这是方法的边界</string>
+    <string name="tutorial_demo_hint_prev">上一张</string>
+    <string name="tutorial_demo_hint_next">下一张</string>
 </resources>

@@ -7,11 +7,13 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import com.unblock.app.R
 import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -92,6 +94,22 @@ class QuadEditorView @JvmOverloads constructor(
     fun imageWidth(): Int = bitmap?.width ?: 0
 
     fun imageHeight(): Int = bitmap?.height ?: 0
+
+    /** 四角在 View 坐标系下的外接矩形，供聚光引导定位使用。 */
+    fun quadBoundsInView(): RectF? {
+        if (bitmap == null) return null
+        matrix.mapPoints(tmp, quad)
+        val r = RectF(tmp[0], tmp[1], tmp[0], tmp[1])
+        for (i in 1 until 4) {
+            val x = tmp[i * 2]
+            val y = tmp[i * 2 + 1]
+            r.left = min(r.left, x)
+            r.right = max(r.right, x)
+            r.top = min(r.top, y)
+            r.bottom = max(r.bottom, y)
+        }
+        return r
+    }
 
     private fun resetMatrix() {
         val bmp = bitmap ?: return
