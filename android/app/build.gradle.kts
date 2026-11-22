@@ -16,14 +16,23 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0-m1"
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
     }
 
     buildTypes {
+        // ABI 按构建类型分别指定：调试包保留双 ABI 便于各种真机，
+        // 发布包只留 arm64-v8a，体积从约 109MB 降到约 60MB。
+        debug {
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
+        }
         release {
             isMinifyEnabled = false
+            // 开源演示包用调试签名，下载后可直接安装
+            signingConfig = signingConfigs.getByName("debug")
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
         }
     }
 
